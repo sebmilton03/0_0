@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0_0 · math check</title>
+<style>
+  body { margin: 0; padding: 24px; background: #0a0a0a; color: #f3f3f3; font: 15px/1.5 system-ui, sans-serif; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  #sum { margin-bottom: 18px; font-weight: 600; }
+  .ok { color: #3ecf8e; } .bad { color: #e5645e; }
+  li { margin: 4px 0; } code { color: #8d8d8d; }
+</style>
+</head>
+<body>
+<h1>0_0 · math check</h1>
+<p>Open this file any time the math changes. Every line should be green.</p>
+<p id="sum"></p>
+<ul id="out"></ul>
+<script src="money.js"></script>
+<script>
+  const results = [];
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  function eq(name, got, want) { results.push({ name, ok: same(got, want), got, want }); }
+  function near(name, got, want, tol = 0.005) { results.push({ name, ok: Math.abs(got - want) <= tol, got, want }); }
+
+  // Your real stub: paid Mon Aug 31 2026 for Aug 10–23.
+  const JOB = stubToSource('2026-08-31', '2026-08-10', '2026-08-23');
+  const sch = schedule(JOB);
+  const D = dayOf;
+
+  // A month that costs $3,022: $2,722 of bills plus $300 pocket. Checks at $18.14/hr, like the mockup.
+  function fresh() {
+    return { v: 1, bills: [{ label: 'Everything but pocket', amount: 2722 }], pocket: 300, sources: [JOB], events: [], lastLog: null, lastLine: null };
+  }
+  function check(s, payIso, hrs, net = +(hrs * 18.14).toFixed(2)) {
+    const pay = D(payIso);
+    s.events.push({ id: 'c' + payIso, type: 'check', start: isoOf(pay - 8 - 13), end: isoOf(pay - 8), label: '', ref: 'job', value: net, hours: hrs });
+  }
+  function week(s, startIso, hrs) { s.events.push({ id: 'w' + startIso, type: 'hours', start: startIso, end: isoOf(D(startIso) + 6), label: '', ref: 'job', value: hrs }); }
+  function pocket(s, iso, v) { s.events.push({ id: 'p' + iso, type: 'pocket', start: iso, end: iso, label: '', ref: null, value: v }); }
+  const pays = (y, m) => sch.paidIn(y, m).map(p => isoOf(p.pay));
+
+  // --- The pay schedule, from one stub
+  eq('stub → every 14 days', JOB.every, 14);
+  eq('stub → paid 8 days after the period ends', JOB.lag, 8);
+  eq('a 10-day period is refused', !!stubToSource('2026-08-31', '2026-08-14', '2026-08-23').error, true);
+  eq('a pay date before the period ends is refused', !!stubToSource('2026-08-20', '2026-08-10', '2026-08-23').error, true);
+  eq('September 2026 paydays', pays(2026, 8), ['2026-09-14', '2026-09-28']);
+  eq('August 2026 had three checks', pays(2026, 7), ['2026-08-03', '2026-08-17', '2026-08-31']);
+  eq('March 2027 has three checks', pays(2027, 2), ['2027-03-01', '2027-03-15', '2027-03-29']);
+  eq('August 2027 has three checks', pays(2027, 7), ['2027-08-02', '2027-08-16', '2027-08-30']);
+  eq('three-check months, next 12 from Sep 2026', threeCheckMonths(JOB, D('2026-09-21')), ['Mar 2027', 'Aug 2027']);
+  eq('next payday after Mon Sep 21', isoOf(sch.nextPay(D('2026-09-21'))), '2026-09-28');
+  eq('next payday on a payday is the one after', isoOf(sch.nextPay(D('2026-09-28'))), '2026-10-12');
+  const weekly = schedule(stubToSource('2026-09-18', '2026-09-07', '2026-09-13'));
+  eq('weekly pay: 4 checks in September', weekly.paidIn(2026, 8).length, 4);
+  eq('weekly pay: 5 checks in October', weekly.paidIn(2026, 9).length, 5);
+
+  // --- Windows: the work behind a month's checks
+  const nov = windowAt(sch, D('2026-09-21'));
+  eq('today (Sep 21) is in the window that funds November', MONTHS[nov.funds], 'November');
+  eq('November window runs Sep 21 – Oct 18', [isoOf(nov.start), isoOf(nov.end)], ['2026-09-21', '2026-10-18']);
+  eq('November window is 4 weeks', nov.weeks.length, 4);
+  eq('Sep 20 still belongs to October', MONTHS[windowAt(sch, D('2026-09-20')).funds], 'October');
+  const dec = windowAt(sch, D('2026-10-19'));
+  eq('December window runs Oct 19 – Nov 15', [MONTHS[dec.funds], isoOf(dec.start), isoOf(dec.end)], ['December', '2026-10-19', '2026-11-15']);
+  eq('weeks don’t drift across daylight saving (Nov 1)', dec.weeks.map(w => isoOf(w.start)), ['2026-10-19', '2026-10-26', '2026-11-02', '2026-11-09']);
+  const apr = windowFor(sch, 2027, 2);
+  eq('April 2027 is funded by 6 weeks: Feb 8 – Mar 21', [MONTHS[apr.funds], apr.weeks.length, isoOf(apr.start), isoOf(apr.end)], ['April', 6, '2027-02-08', '2027-03-21']);
+  eq('weeks start on Mondays', WEEKDAYS[partsOf(nov.weeks[0].start).wd], 'Monday');
+
+  // --- Formatting
+  eq('Sun Nov 1', fmtDay(D('2026-11-01')), 'Sun Nov 1');
+  eq('range across months', fmtRange(D('2026-09-28'), D('2026-10-04')), 'Sep 28 – Oct 4');
+  eq('range inside a month', fmtRange(D('2026-10-05'), D('2026-10-11')), 'Oct 5 – 11');
+  eq('money rounds to dollars', money(808.92), '$809');
+  eq('negative money', money(-20), '−$20');
+
+  // --- Screen 1 of the mockup: Mon Oct 12, just logged
+  function oct12() {
+    const s = fresh();
+    check(s, '2026-09-14', 80); check(s, '2026-09-28', 78);
+    check(s, '2026-10-12', 77, 1396.78);           // pays Sep 21 – Oct 4
+    week(s, '2026-10-05', 45);                     // Oct 5 – 11
+    pocket(s, '2026-10-12', 84);
+    return s;
+  }
+  let st = getStatus(oct12(), D('2026-10-12'));
+  eq('Oct 12: a month costs $3,022', monthTotal(oct12()), 3022);
+  near('Oct 12: $/hr from the last 3 checks', st.rate, 18.14, 0.001);
+  eq('Oct 12: nothing due', st.anyDue, false);
+  eq('Oct 12: something to do (not chillin)', st.chillin, false);
+  eq('Oct 12: funding November, 1 week left', [MONTHS[st.activeWin.funds], st.act.weeksLeft], ['November', 1]);
+  eq('Oct 12: 45 hrs left', Math.round(st.act.hoursLeft), 45);
+  eq('Oct 12: $53 behind pace', Math.round(st.act.ahead), -53);
+  eq('Oct 12: $809 to go', Math.round(st.act.toGo), 809);
+  eq('Oct 12: paid $1,397, logged $816', [Math.round(st.act.paid), Math.round(st.act.logged)], [1397, 816]);
+  eq('Oct 12: pocket $84, 20 days, $4.20 a day, tight', [st.pocket.balance, st.pocket.daysLeft, st.pocket.perDay.toFixed(2), st.pocket.fine], [84, 20, '4.20', false]);
+  eq('Oct 12: next is Sun Oct 18', [fmtDay(st.next.day), st.next.check], ['Sun Oct 18', false]);
+
+  // --- Screen 2: Mon Oct 19, last week not logged
+  st = getStatus(oct12(), D('2026-10-19'));
+  eq('Oct 19: last week is due', st.due.weeks.map(w => isoOf(w.start)), ['2026-10-12']);
+  eq('Oct 19: no check due yet', st.due.checks.length, 0);
+  eq('Oct 19: November is locked in', MONTHS[st.lockedWin.funds], 'November');
+  eq('Oct 19: the window you can move funds December', MONTHS[st.activeWin.funds], 'December');
+
+  // --- After logging it: covered, and chillin if the pocket is fine
+  function oct19(pocketBalance) { const s = oct12(); week(s, '2026-10-12', 46); pocket(s, '2026-10-19', pocketBalance); return s; }
+  st = getStatus(oct19(140), D('2026-10-19'));
+  eq('Oct 19 logged: November covered (estimate until Oct 26)', [st.lock.covered, st.lock.estimate, isoOf(st.lock.lastPay)], [true, true, '2026-10-26']);
+  eq('Oct 19 logged, pocket $140 for 13 days: chillin', st.chillin, true);
+  eq('Oct 19 logged, pocket $60: not chillin', getStatus(oct19(60), D('2026-10-19')).chillin, false);
+
+  // --- Logging on the Sunday counts from then
+  const sun = oct12(); week(sun, '2026-10-12', 46); pocket(sun, '2026-10-18', 150);
+  st = getStatus(sun, D('2026-10-18'));
+  eq('Sun Oct 18 logged: counts as done, moves to December', [st.ref === D('2026-10-19'), MONTHS[st.activeWin.funds], st.chillin], [true, 'December', true]);
+  eq('Sun Oct 18 logged: next is the following Sunday', fmtDay(st.next.day), 'Sun Oct 25');
+
+  // --- Screen 3: Sun Nov 8, just logged
+  function nov8() {
+    const s = fresh();
+    check(s, '2026-09-28', 78); check(s, '2026-10-12', 77, 1396.78); check(s, '2026-10-26', 91);
+    week(s, '2026-10-19', 43); week(s, '2026-10-26', 42); week(s, '2026-11-02', 41);
+    pocket(s, '2026-11-08', 260);
+    return s;
+  }
+  st = getStatus(nov8(), D('2026-11-08'));
+  eq('Nov 8: chillin', st.chillin, true);
+  eq('Nov 8: December on track, $19 ahead', [MONTHS[st.activeWin.funds], Math.round(st.act.ahead)], ['December', 19]);
+  eq('Nov 8: pocket $260 for 23 days', [st.pocket.daysLeft, st.pocket.perDay.toFixed(2), st.pocket.fine], [23, '11.30', true]);
+  eq('Nov 8: next is your check, Mon Nov 9', [fmtDay(st.next.day), st.next.check], ['Mon Nov 9', true]);
+  eq('Nov 9: that check is due', getStatus(nov8(), D('2026-11-09')).due.checks.map(p => isoOf(p.pay)), ['2026-11-09']);
+
+  // --- Skip two weeks: nothing breaks, the checks fill in
+  const skip = fresh();
+  check(skip, '2026-09-28', 78); week(skip, '2026-09-21', 40); week(skip, '2026-09-28', 37); pocket(skip, '2026-10-04', 150);
+  st = getStatus(skip, D('2026-10-20'));
+  eq('back on Oct 20: the Oct 12 check is due', st.due.checks.map(p => isoOf(p.pay)), ['2026-10-12']);
+  eq('back on Oct 20: two weeks to log', st.due.weeks.map(w => isoOf(w.start)), ['2026-10-05', '2026-10-12']);
+  const gap = fresh();
+  check(gap, '2026-09-28', 78); pocket(gap, '2026-10-12', 150);
+  st = getStatus(gap, D('2026-10-13'));
+  eq('weeks a landed check will cover aren’t asked for', st.due.weeks.map(w => isoOf(w.start)), ['2026-10-05']);
+
+  // --- A week you don't know waits for its check
+  const unk = oct12(); unk.events.find(e => e.start === '2026-10-05' && e.type === 'hours').value = null;
+  week(unk, '2026-10-12', 40); pocket(unk, '2026-10-19', 200);
+  st = getStatus(unk, D('2026-10-19'));
+  eq('unknown week: not chillin, waiting on the Oct 26 check', [st.chillin, st.lock.unknown.length, isoOf(st.lock.waitingOn[0])], [false, 1, '2026-10-26']);
+  check(unk, '2026-10-26', 85);
+  eq('unknown week: the check fills it in', getStatus(unk, D('2026-10-26')).lock.unknown.length, 0);
+
+  // --- Covered early, out of reach, and the rate
+  const big = oct12(); big.events.find(e => e.start === '2026-10-05' && e.type === 'hours').value = 95;
+  st = getStatus(big, D('2026-10-12'));
+  eq('covered early: no hours left', [st.act.covered, st.act.toGo], [true, 0]);
+  const low = fresh(); check(low, '2026-09-14', 80); check(low, '2026-09-28', 78); check(low, '2026-10-12', 20); week(low, '2026-10-05', 0); pocket(low, '2026-10-12', 200);
+  st = getStatus(low, D('2026-10-12'));
+  eq('out of reach: more than ' + MAX_WEEK + ' a week', st.act.perWeek > MAX_WEEK, true);
+  const r = fresh(); check(r, '2026-08-31', 80, 800); check(r, '2026-09-14', 80, 1600); check(r, '2026-09-28', 80, 1600); check(r, '2026-10-12', 80, 1600);
+  near('$/hr uses only the last 3 checks', hourlyRate(r), 20, 0.0001);
+
+  // --- Pocket
+  const edge = fresh(); check(edge, '2026-09-28', 78); pocket(edge, '2026-10-02', 300);   // $300 for 30 days in a 31-day month
+  eq('pocket at exactly its daily budget is fine', getStatus(edge, D('2026-10-02')).pocket.fine, true);
+  const stale = fresh(); check(stale, '2026-10-26', 80); pocket(stale, '2026-10-31', 50);
+  eq('a new month needs a new pocket balance', getStatus(stale, D('2026-11-01')).due.pocket, true);
+  eq('a balance from 8 days ago is stale', getStatus(stale, D('2026-10-31') + 8).due.pocket, true);
+
+  // --- Show results
+  const bad = results.filter(x => !x.ok);
+  document.getElementById('sum').className = bad.length ? 'bad' : 'ok';
+  document.getElementById('sum').textContent = bad.length ? bad.length + ' of ' + results.length + ' failed' : 'All ' + results.length + ' checks pass';
+  document.getElementById('out').innerHTML = results.map(x => '<li class="' + (x.ok ? 'ok' : 'bad') + '">' + (x.ok ? '✓ ' : '✗ ') + x.name +
+    (x.ok ? '' : ' <code>got ' + JSON.stringify(x.got) + ', want ' + JSON.stringify(x.want) + '</code>') + '</li>').join('');
+</script>
+</body>
+</html>
