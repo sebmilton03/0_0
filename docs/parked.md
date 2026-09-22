@@ -18,6 +18,10 @@ Rough order, most valuable first.
   time off beyond it.
 - Next check estimate, as one line.
 
+### Built 2026-09-23 (later)
+- +1: bubbles removed (Seb didn't like them), and you can fix a day's best set from the history.
+- Start screen: "Back up everything" and "Restore" in one file, covering both apps.
+
 ### Built 2026-09-23
 - Log a shift: this week counts down, with a bar. A week of shifts counts as logged; a weekly
   total replaces them. (Was I.)

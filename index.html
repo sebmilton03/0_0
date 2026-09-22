@@ -27,6 +27,8 @@
   .green { color: var(--green) !important; } .amber { color: var(--amber) !important; }
   .stack { margin-top: 60px; font-size: 52px; font-weight: 700; letter-spacing: -1.5px; line-height: 1.05; color: var(--green); }
   .quiet .app { opacity: .45; }
+  .backup { margin-top: auto; padding-top: 30px; text-align: center; font-size: 14px; color: var(--muted); }
+  .backup button { font: inherit; color: var(--text); background: none; border: none; text-decoration: underline; padding: 6px; }
 </style>
 </head>
 <body>
@@ -37,7 +39,10 @@
     <a class="app" href="money/"><span class="ic">$</span><div><b>Money</b><small id="moneyLine">&nbsp;</small></div><span class="go">›</span></a>
     <a class="app" href="plusone/"><span class="ic">+1</span><div><b>+1</b><small id="plusLine">&nbsp;</small></div><span class="go">›</span></a>
   </div>
+  <p class="backup">Your apps keep everything on this phone. Updates don't touch it.<br>
+    <button id="save">Back up everything</button> · <button id="load">Restore</button></p>
 </main>
+<input type="file" id="file" accept="application/json,.json" hidden>
 <script src="money/money.js"></script>
 <script>
   // The start screen: one line per app, so most days you don't need to open either.
@@ -73,6 +78,32 @@
     document.getElementById('apps').className = 'apps' + (all ? ' quiet' : '');
     if (all) { face.textContent = '-_-'; face.className = 'mark dim'; }
   }
+  // One file with everything both apps have saved, so an update or a wiped browser can't lose it.
+  const KEYS = ['0_0-money-v1', 'plus-one-v1'];
+  document.getElementById('save').onclick = () => {
+    const data = { app: '0_0', kind: 'everything', exported: new Date().toISOString().slice(0, 10), keys: {} };
+    for (const k of KEYS) { const v = localStorage.getItem(k); if (v) data.keys[k] = v; }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
+    a.download = '0_0-backup-' + data.exported + '.json';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
+  document.getElementById('load').onclick = () => document.getElementById('file').click();
+  document.getElementById('file').onchange = e => {
+    const f = e.target.files[0];
+    if (!f) return;
+    f.text().then(t => {
+      let d; try { d = JSON.parse(t); } catch {}
+      const keys = d && (d.keys || (d.state ? { '0_0-money-v1': JSON.stringify(d.state) } : null));
+      if (!keys) return alert('That file isn’t a 0_0 backup.');
+      if (!confirm('Replace what’s on this phone with the backup from ' + (d.exported || 'that file') + '?')) return;
+      for (const [k, v] of Object.entries(keys)) localStorage.setItem(k, v);
+      render();
+      alert('Restored.');
+    }).finally(() => { e.target.value = ''; });
+  };
+
   render();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
   window.addEventListener('pageshow', render);

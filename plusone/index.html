@@ -103,8 +103,6 @@
   #btn.live #slide { display: flex; }
   #slide b { font-size: 96px; font-weight: 700; letter-spacing: -3px; line-height: 1; font-variant-numeric: tabular-nums; }
   #slide small { margin-top: 10px; font-size: 15px; font-weight: 600; opacity: .75; }
-  .bub { position: absolute; bottom: -24px; border-radius: 50%; border: 2px solid rgba(255,255,255,.85); background: rgba(255,255,255,.28); animation: bub 1.5s ease-out forwards; }
-  @keyframes bub { to { transform: translate(var(--dx), -460px) scale(.35); opacity: 0; } }
   .row { display: flex; gap: 8px; margin-top: 12px; }
   .pill.best { margin-left: auto; color: var(--text); }
   .pill.best small { color: var(--muted); margin-left: 6px; }
@@ -202,7 +200,12 @@
     <h2 id="hBest">Best set</h2>
     <p class="hint" id="hSub"></p>
     <ul class="hist" id="hList"></ul>
-    <p class="hint">Your best set each day. A slide counts as one set, and so do quick taps in a row.</p>
+    <div id="hEdit" hidden>
+      <p class="lab" id="hEditLab"></p>
+      <input class="num" id="hEditN" type="number" inputmode="numeric" min="0">
+      <div class="acts"><button class="ghost" id="hEditDel">Delete</button><button class="cta" id="hEditSave">Save</button></div>
+    </div>
+    <p class="hint" id="hHint">Your best set each day. A slide counts as one set, and so do quick taps in a row. Tap a day to fix it.</p>
     <button class="ghost" id="hClose">Close</button>
   </div>
 </div>
@@ -527,21 +530,10 @@
     $('btn').classList.add('live');
     $('slideN').textContent = '+0';
     buzz(15);
-    press.bubbles = setInterval(() => {
-      const b = document.createElement('i'), left = Math.random() < .5, size = 6 + Math.random() * 16;
-      b.className = 'bub';
-      b.style.width = b.style.height = size + 'px';
-      b.style[left ? 'left' : 'right'] = (4 + Math.random() * 26) + 'px';
-      b.style.setProperty('--dx', (left ? 1 : -1) * Math.random() * 30 + 'px');
-      $('slide').appendChild(b);
-      setTimeout(() => b.remove(), 1500);
-    }, 140);
   }
   function endSlide() {
     clearTimeout(press.timer);
-    clearInterval(press.bubbles);
     $('btn').classList.remove('live');
-    $('slide').querySelectorAll('.bub').forEach(b => b.remove());
   }
   $('btn').addEventListener('pointerdown', e => {
     const day = replay(today()).today;
@@ -588,9 +580,31 @@
     const best = bestSet(), days = Object.entries(state.sets || {}).map(([d, s]) => [+d, Math.max(...s)]).sort((a, b) => b[0] - a[0]);
     $('hBest').textContent = 'Best set · ' + best.reps;
     $('hSub').textContent = 'Set on ' + shortDate(best.day) + '.';
-    $('hList').innerHTML = days.map(([d, r]) => '<li><span>' + shortDate(d) + '</span><i style="width:' + Math.max(4, r / best.reps * 100) * .6 + '%"></i><b>' + r + '</b></li>').join('');
+    $('hList').innerHTML = days.map(([d, r]) => '<li data-d="' + d + '"><span>' + shortDate(d) + '</span><i style="width:' + Math.max(4, r / best.reps * 100) * .6 + '%"></i><b>' + r + '</b></li>').join('');
+    $('hEdit').hidden = true; $('hList').hidden = false; $('hHint').hidden = false;
     $('hist').hidden = false;
   };
+  // Tap a day to fix its best set, in case a slide got away from you.
+  let editBest = null;
+  $('hList').onclick = e => {
+    const li = e.target.closest('li');
+    if (!li) return;
+    editBest = +li.dataset.d;
+    const sets = state.sets[editBest] || [];
+    $('hEditLab').textContent = 'Best set on ' + shortDate(editBest);
+    $('hEditN').value = sets.length ? Math.max(...sets) : 0;
+    $('hList').hidden = true; $('hHint').hidden = true; $('hEdit').hidden = false;
+  };
+  function saveBest(v) {
+    const sets = state.sets[editBest] || [], i = sets.indexOf(Math.max(...sets));
+    if (v > 0) sets[i] = v; else sets.splice(i, 1);
+    if (!sets.length) delete state.sets[editBest];
+    save();
+    render();
+    $('hist').hidden = true;
+  }
+  $('hEditSave').onclick = () => { const v = Number($('hEditN').value); if (Number.isInteger(v) && v >= 0) saveBest(v); };
+  $('hEditDel').onclick = () => saveBest(0);
   $('hClose').onclick = () => { $('hist').hidden = true; };
   $('hist').onclick = e => { if (e.target === $('hist')) $('hist').hidden = true; };
 
