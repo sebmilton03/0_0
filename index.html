@@ -25,12 +25,15 @@
   .app small { display: block; margin-top: 3px; font-size: 15px; color: var(--muted); }
   .go { color: #555; font-size: 26px; }
   .green { color: var(--green) !important; } .amber { color: var(--amber) !important; }
+  .stack { margin-top: 60px; font-size: 52px; font-weight: 700; letter-spacing: -1.5px; line-height: 1.05; color: var(--green); }
+  .quiet .app { opacity: .45; }
 </style>
 </head>
 <body>
 <main>
   <div class="mark" id="face">0_0</div>
-  <div class="apps">
+  <div class="stack" id="stack" hidden></div>
+  <div class="apps" id="apps">
     <a class="app" href="money/"><span class="ic">$</span><div><b>Money</b><small id="moneyLine">&nbsp;</small></div><span class="go">›</span></a>
     <a class="app" href="plusone/"><span class="ic">+1</span><div><b>+1</b><small id="plusLine">&nbsp;</small></div><span class="go">›</span></a>
   </div>
@@ -58,7 +61,17 @@
     let line = null;
     try { line = JSON.parse(localStorage.getItem('plus-one-line')); } catch {}
     const d = new Date(Date.now() - 4 * 36e5), plusToday = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 864e5;   // +1's day ends at 4 AM
-    p.textContent = line && line.day === plusToday ? line.text : 'Not opened today';
+    const fresh = line && line.day === plusToday;
+    p.textContent = fresh ? line.text : 'Not opened today';
+
+    // Chillin stacks, but only when every app is quiet at once.
+    const quiet = [m.textContent === 'You’re chillin', !!(fresh && line.done)];
+    const all = quiet.every(Boolean), n = quiet.length;
+    const LEVELS = ['', 'You’re chillin', 'You’re hecka chillin', 'You’re mega chillin bruh'];
+    document.getElementById('stack').hidden = !all;
+    document.getElementById('stack').innerHTML = all ? (LEVELS[n] || LEVELS[3]).replace(' ch', '<br>ch') : '';
+    document.getElementById('apps').className = 'apps' + (all ? ' quiet' : '');
+    if (all) { face.textContent = '-_-'; face.className = 'mark dim'; }
   }
   render();
   document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });

@@ -15,16 +15,21 @@ last thing has survived a real month of use.
   the stretch: 4 weeks, or 6 twice a year. The pay lag lives in the math, never on the screen.
 - This week = hours still needed ÷ weeks left. After a short week, the rest go up a little. There's
   no schedule to fall behind on.
-- Tap a week to plan it. The others adjust.
+- Tap a week to plan it (weeks to come) or see what's logged and when (weeks done).
+- Log shifts mid-week if you like, and this week counts down. A weekly total replaces them.
 - Paydays: the same card every time, with two numbers off the stub (take-home and hours). $/hr is
   the average of the last 3 checks.
+
+**+1.** One number a day that grows by one. Tap adds 1. Hold and slide adds or takes off many (amber
+means a gesture is live). Each slide is a set, and your best set is kept with its history.
 
 **Check-ins.** Sunday: hours and pocket balance. Payday: the stub. That's all. Nothing is
 pre-filled, because typing it is checking it. No bank sync.
 
 **Quiet by default.**
-- Chillin needs a fresh check-in, being on track, and pocket OK. Then there's no button, and the face
-  becomes `-_-`.
+- Chillin needs a fresh check-in, being on track, and pocket OK. Then the numbers go under clouds
+  (swipe up to part them), and the face becomes `-_-`. On the start screen, chillin stacks when
+  every app is quiet: chillin → hecka chillin → mega chillin bruh.
 - If it needs no action, it isn't on screen. Gaps under $100 stay silent. Anything shown can be
   dismissed.
 - No comparisons, streaks, scores or extra lines "for trust." Being right is what builds trust.

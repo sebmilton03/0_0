@@ -90,7 +90,9 @@ function windowAt(sch, t) {
      hours:  a week of work, value = hours (null = "don't know, the check will fill it in")
      check:  a paycheck, value = net pay, plus `hours` off the stub; start/end = the period it paid
      pocket: the pocket card balance on a day
-     plan:   hours you plan to work in a week still to come; the other weeks adjust */
+     plan:   hours you plan to work in a week still to come; the other weeks adjust
+     shift:  hours worked on one day. They add up to the week until a weekly total replaces them.
+   Events saved from Sep 23 on also carry `logged`, the day you typed them. */
 function load() {
   try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; }
 }
@@ -101,14 +103,28 @@ const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2
 
 const eventsOf = (s, type) => s.events.filter(e => e.type === type).sort((a, b) => dayOf(a.start) - dayOf(b.start));
 function lookup(s) {
-  const hours = new Map(), checks = new Map(), plans = new Map();
+  const hours = new Map(), checks = new Map(), plans = new Map(), shifts = new Map();
   for (const e of s.events) {
     if (e.type === 'hours') hours.set(dayOf(e.start), e);
     if (e.type === 'check') checks.set(dayOf(e.start), e);
     if (e.type === 'plan') plans.set(dayOf(e.start), e);
+    if (e.type === 'shift') shifts.set(dayOf(e.start), e);
   }
   const pockets = eventsOf(s, 'pocket');
-  return { hours, checks, plans, pocket: pockets[pockets.length - 1] || null };
+  return { hours, checks, plans, shifts, pocket: pockets[pockets.length - 1] || null };
+}
+// Shift hours logged between two days.
+function shiftSum(look, a, b) {
+  let t = 0;
+  for (let d = a; d <= b; d++) { const e = look.shifts.get(d); if (e) t += e.value; }
+  return t;
+}
+// A finished week's hours: the weekly total if there is one, otherwise its shifts.
+function weekHours(look, wk) {
+  const h = look.hours.get(wk.start);
+  if (h) return h.value;                    // null means "don't know"
+  const sh = shiftSum(look, wk.start, wk.end);
+  return sh > 0 ? sh : undefined;           // undefined means nothing logged
 }
 function recentChecks(s) { return eventsOf(s, 'check').filter(c => c.hours > 0).slice(-RATE_CHECKS); }
 function hourlyRate(s) {
@@ -130,9 +146,9 @@ function tally(w, look, rate, target, ref) {
     for (const wk of weeks) {
       if (wk.end >= ref) continue;   // not finished yet
       t.done++;
-      const h = look.hours.get(wk.start);
-      if (h && h.value != null) t.logged += h.value * rate;
-      else if (h) { t.unknown.push(wk); if (!t.waitingOn.includes(p.pay)) t.waitingOn.push(p.pay); }
+      const h = weekHours(look, wk);
+      if (h != null) t.logged += h * rate;
+      else if (h === null) { t.unknown.push(wk); if (!t.waitingOn.includes(p.pay)) t.waitingOn.push(p.pay); }
     }
   }
   t.known = t.paid + t.logged;
@@ -182,7 +198,7 @@ function getStatus(s, now = today()) {
       if (landed && !has) due.checks.push(p);
       if (has || landed) continue;
       for (const wk of w.weeks) {
-        if (wk.start >= p.start && wk.end <= p.end && wk.end < ref && !look.hours.has(wk.start)) due.weeks.push(wk);
+        if (wk.start >= p.start && wk.end <= p.end && wk.end < ref && weekHours(look, wk) === undefined) due.weeks.push(wk);
       }
     }
   }
@@ -220,8 +236,8 @@ function getStatus(s, now = today()) {
     const pay = sch.nextPay(now), per = sch.periodAt(pay - sch.lag);
     let amount = 0;
     for (let d = per.start; d <= per.end; d += 7) {
-      const h = look.hours.get(d), pl = look.plans.get(d);
-      if (d + 6 < ref) amount += h && h.value != null ? h.value * rate : 0;
+      const h = weekHours(look, { start: d, end: d + 6 }), pl = look.plans.get(d);
+      if (d + 6 < ref) amount += h != null ? h * rate : 0;
       else amount += (pl ? pl.value : act ? act.perWeek : 0) * rate;
     }
     nextCheck = { pay, amount };
@@ -251,7 +267,7 @@ function renderHome() {
   const s = getStatus(state);
   let html;
   if (s.anyDue || !s.act) html = revealHTML(s);
-  else if (s.chillin) html = chillinHTML(s);
+  else if (s.chillin) html = busyHTML(s) + (cloudsParted ? '' : chillinHTML(s));
   else html = busyHTML(s);
   $('home').innerHTML = html;
   return s;
@@ -286,15 +302,33 @@ function revealHTML(s) {
     '<div class="spacer"></div><button class="btn" data-go="log">' + btn + '</button>';
 }
 
-// Nothing to do. Less on screen, not more: no button, no praise.
+// Nothing to do. The numbers are still there, under clouds: a bit of fluff peeks at the bottom,
+// and swiping up parts them. They come back the next time you open the app.
+let cloudsParted = false;
+const PUFFS = [[-6, 120], [12, 150], [30, 110], [46, 160], [63, 120], [80, 150], [96, 115]];   // left %, size px
 function chillinHTML(s) {
   const p = s.pocket;
   remember('You were chillin');
-  return topBar('-_-', true) + '<div class="spacer"></div><div class="say chill" data-swipe>' +
+  return '<div class="cover" id="cover"><div class="cover-in">' + topBar('-_-', true) + '<div class="spacer"></div><div class="say chill">' +
     '<h1>You’re<br>chillin</h1><p>' + (s.act.covered ? MONTHS[s.activeWin.funds] + '’s money is covered.' : 'Hours are on track.') +
     '<br>Pocket’s got ' + money(p.balance) + ' for ' + plural(p.daysLeft, 'day') + '.</p></div>' +
-    '<div class="spacer"></div><button class="foot" data-go="log">' + fmtDay(s.now) + ' · next: ' +
-    (s.next.check ? 'your check, ' + fmtDay(s.next.day) : fmtDay(s.next.day)) + '</button>';
+    '<div class="spacer"></div><p class="foot">' + fmtDay(s.now) + ' · next: ' +
+    (s.next.check ? 'your check, ' + fmtDay(s.next.day) : fmtDay(s.next.day)) + '</p></div>' +
+    '<div class="fluff" data-act="part">' + PUFFS.map(([x, w]) => '<i class="puff" style="left:' + x + '%;width:' + w + 'px;height:' + w + 'px"></i>').join('') + '</div></div>';
+}
+function partClouds() {
+  const c = $('cover');
+  if (!c || c.classList.contains('part')) return;
+  cloudsParted = true;
+  const mid = innerWidth / 2;
+  c.querySelectorAll('.puff').forEach((el, i) => {
+    const r = el.getBoundingClientRect(), side = r.left + r.width / 2 < mid ? -1 : 1;
+    el.style.transform = 'translate(' + side * (160 + i * 37 % 140) + 'px,' + -(420 + i * 53 % 260) + 'px) scale(' + (2.2 + i % 3 * .5) + ')';
+    el.style.opacity = '0';
+  });
+  c.classList.add('part');
+  buzz([8, 30, 8]);
+  setTimeout(() => c.remove(), 1100);
 }
 
 // This week's number, and how you're doing against the stretch spread out evenly.
@@ -304,12 +338,14 @@ function thisWeek(s) {
     start: wk.start, end: wk.end, next: wk.start > s.now, number: a.done + 1,
     hours: Math.round(s.look.plans.has(wk.start) && wk.end >= s.ref ? s.look.plans.get(wk.start).value : a.perWeek),
     planned: s.look.plans.has(wk.start) && wk.end >= s.ref,
+    worked: shiftSum(s.look, wk.start, wk.end),
     normal: Math.round(a.target / s.rate / a.total),
     ahead: a.done ? Math.round(a.ahead / s.rate) : 0,   // in hours; nothing to be ahead of in week 1
   };
 }
 
 // The day you move money into the cards: the last day of the month the checks land in.
+const fmtH = h => String(Math.round(h * 10) / 10);   // 26.5, 33
 const fmtMD = d => { const p = partsOf(d); return short(MONTHS[p.m]) + ' ' + p.date; };   // Oct 31
 function transferDay(win) { const p = partsOf(win.periods[0].pay); return monthEnd(p.y, p.m); }
 
@@ -319,12 +355,13 @@ function weekStrip(s) {
   return s.activeWin.weeks.map(wk => {
     if (wk.end < s.ref) {
       const h = s.look.hours.get(wk.start), c = s.look.checks.get(s.sch.periodAt(wk.start).start);
-      const logged = h && h.value != null;
-      const hrs = logged ? h.value : c ? c.hours / (s.sch.every / 7) : null;   // a check alone: split evenly
-      return { start: wk.start, kind: 'done', hours: hrs == null ? null : Math.round(hrs), approx: !logged && hrs != null, short: hrs != null && hrs < normal - 0.5 };
+      const logged = h && h.value != null;   // a check alone: split evenly across its weeks
+      const sh = !h && shiftSum(s.look, wk.start, wk.end);
+      const val = logged ? h.value : sh ? sh : c ? c.hours / (s.sch.every / 7) : null;
+      return { start: wk.start, kind: 'done', hours: val == null ? null : Math.round(val), approx: !logged && !sh && val != null, short: val != null && val < normal - 0.5 };
     }
-    const pl = s.look.plans.get(wk.start);
-    return { start: wk.start, kind: wk.start <= s.ref ? 'now' : 'next', hours: pl ? Math.round(pl.value) : need, planned: !!pl };
+    const pl = s.look.plans.get(wk.start), hours = pl ? Math.round(pl.value) : need;
+    return { start: wk.start, kind: wk.start <= s.ref ? 'now' : 'next', hours, planned: !!pl, worked: shiftSum(s.look, wk.start, wk.end) };
   });
 }
 
@@ -341,9 +378,15 @@ function busyHTML(s) {
     const how = !w.ahead ? 'on track'
       : w.ahead > 0 ? '<span class="green">' + plural(w.ahead, 'hr') + ' ahead</span>'
       : '<span class="' + (red ? 'red' : 'amber') + '">' + plural(-w.ahead, 'hr') + ' behind</span>';
+    const left = Math.max(0, w.hours - w.worked);
+    const big = !w.worked ? '<b' + (red ? ' class="red"' : '') + '>' + w.hours + '</b><span>hrs</span>'
+      : left ? '<b' + (red ? ' class="red"' : '') + '>' + fmtH(left) + '</b><span>hrs left</span>'
+      : '<b class="green">Done</b>';
+    const fill = w.hours ? Math.min(100, w.worked / w.hours * 100) : 100;
     hero = '<div class="label">' + (w.next ? 'Next week' : 'This week') + ' · ' + fmtRange(w.start, w.end) + '</div>' +
-      '<div class="big"><b' + (red ? ' class="red"' : '') + '>' + w.hours + '</b><span>hrs</span></div>' +
-      '<p class="sub">' + how + (w.ahead ? ' · normally ' + w.normal : '') + '</p>';
+      '<div class="big' + (w.worked && !left ? ' word' : '') + '">' + big + '</div>' +
+      '<p class="sub">' + (w.worked ? fmtH(w.worked) + ' of ' + w.hours + ' worked · ' : '') + how + (w.ahead && !w.worked ? ' · normally ' + w.normal : '') + '</p>' +
+      '<div class="wkbar"><i style="width:' + fill + '%"></i></div>';
     remember(w.hours + ' hrs that week, ' + (w.ahead > 0 ? w.ahead + ' ahead' : w.ahead < 0 ? -w.ahead + ' behind' : 'on track'));
   }
 
@@ -352,13 +395,15 @@ function busyHTML(s) {
     const d = partsOf(b.start);
     const num = b.hours == null ? '–' : (b.approx ? '~' : '') + b.hours;
     const inner = '<span>' + short(MONTHS[d.m]) + ' ' + d.date + '</span><b>' + num + '</b>';
-    if (b.kind === 'done') return '<div class="wk done' + (b.short ? ' short' : ' ok') + '">' + inner + '</div>';
-    return '<button class="wk ' + b.kind + (b.planned ? ' planned' : '') + '" data-act="plan" data-w="' + isoOf(b.start) + '">' + inner + '</button>';
+    if (b.kind === 'done') return '<button class="wk done' + (b.short ? ' short' : ' ok') + '" data-act="week" data-w="' + isoOf(b.start) + '">' + inner + '</button>';
+    const f = b.kind === 'now' && b.worked && b.hours ? Math.min(100, b.worked / b.hours * 100) : 0;
+    return '<button class="wk ' + b.kind + (b.planned ? ' planned' : '') + '" data-act="plan" data-w="' + isoOf(b.start) + '"' +
+      (f ? ' style="background:linear-gradient(to top, rgba(62,207,142,.28) ' + f + '%, var(--card) ' + f + '%)"' : '') + '>' + inner + '</button>';
   }).join('') + '</div>';
 
   const notes = [];
   if (s.nextCheck) notes.push('Next check ' + fmtDay(s.nextCheck.pay) + ': about ' + money(s.nextCheck.amount));
-  notes.push('Tap a week to plan it. These weeks pay for your ' + T + ' transfer.');
+  notes.push('These weeks pay for your ' + T + ' transfer.');
   if (a.planShort) notes.push('<span class="amber">Your plan leaves ' + plural(Math.round(a.planShort), 'hr') + ' uncovered.</span> Raise a week or clear a plan.');
   if (red) notes.push('Even at ' + MAX_WEEK + ' a week you’d be about ' + money(a.toGo - MAX_WEEK * a.weeksLeft * s.rate) + ' short. Plan to cover that from savings.');
   else if (a.weeksLeft === 1 && !a.covered) notes.push('Last week for the ' + T + ' transfer.');
@@ -419,11 +464,19 @@ function renderLog() {
     for (const p of s.due.checks) rows += checkRow(p, null);
     s.due.weeks.forEach(wk => { rows += weekRow(wk, 'Week', null, true); });
   } else if (logMode === 'due') {
+    // A shift: any day this week so far, today first. Typing a day again replaces it.
+    const wk = s.sch.weekAt(s.now), days = [];
+    for (let d = s.now; d >= wk.start; d--) days.push(d);
+    const todays = look.shifts.get(s.now);
+    rows += '<div class="sec" data-shift><span class="label">Shift</span><div class="pair">' +
+      '<label class="field stack"><small>Day</small><span class="in"><select data-k="day">' + days.map(d => '<option value="' + isoOf(d) + '">' + (d === s.now ? 'Today' : fmtDay(d)) + '</option>').join('') + '</select></span></label>' +
+      '<label class="field stack"><small>Hours</small><span class="in"><input data-k="shift" inputmode="decimal" autocomplete="off" placeholder="0" value="' + (todays ? todays.value : '') + '"></span></label></div>' +
+      '<p class="hint">Optional. This week counts down as you add shifts.</p></div>';
     for (const p of s.due.checks) rows += checkRow(p, null);
     s.due.weeks.forEach(wk => { rows += weekRow(wk, s.due.weeks.length > 1 ? 'Week' : 'Last week', null, true); });
     const cur = s.sch.weekAt(s.now);
     if (cur.end === s.now && !look.hours.has(cur.start)) rows += weekRow(cur, 'This week', null, false);
-    if (!rows) rows = '<p class="done-all">Weeks and checks are all in.</p>';
+
     const last = look.pocket, np = partsOf(s.now);
     rows += '<div class="sec" data-pocket><span class="label">Pocket card' + (s.due.pocket ? '' : ' · optional') + '</span><label class="field"><span class="pre">$</span>' +
       '<input data-k="pocket" inputmode="decimal" autocomplete="off" placeholder="0">' +
@@ -484,6 +537,16 @@ function saveLog() {
     if (hrs > 160) warns.push(hrs + ' hrs on one check?');
     ops.push(() => upsertCheck(start, end, pay, net, hrs));
   });
+  const sr = document.querySelector('#log [data-shift]');
+  if (sr) {
+    const day = sr.querySelector('[data-k="day"]').value, raw = sr.querySelector('[data-k="shift"]').value.trim();
+    const had = state.events.some(x => x.type === 'shift' && x.start === day);
+    if (raw !== '' || had) {
+      const h = raw === '' ? 0 : num(raw);
+      if (!(h >= 0)) errs.push('Shift hours should be a number.');
+      else { if (h > 16) warns.push(h + ' hrs in one shift?'); ops.push(() => upsertShift(day, h)); }
+    }
+  }
   const pr = document.querySelector('#log [data-pocket] input');
   if (pr && pr.value.trim() !== '') {
     const v = num(pr.value);
@@ -515,7 +578,7 @@ function saveLog() {
 // Plan a week still to come (or clear it with null). Works on any saved-data object, so the sheet can preview.
 function setPlan(s, startIso, value) {
   s.events = s.events.filter(x => !(x.type === 'plan' && x.start === startIso));
-  if (value != null) s.events.push({ id: newId(), type: 'plan', start: startIso, end: isoOf(dayOf(startIso) + 6), label: 'Plan', ref: 'job', value });
+  if (value != null) s.events.push({ id: newId(), type: 'plan', start: startIso, end: isoOf(dayOf(startIso) + 6), label: 'Plan', ref: 'job', value, logged: isoOf(today()) });
 }
 function openPlan(iso) {
   const s = getStatus(state), wk = s.activeWin.weeks.find(w => isoOf(w.start) === iso), cur = s.look.plans.get(wk.start);
@@ -524,6 +587,7 @@ function openPlan(iso) {
   el.innerHTML = '<div class="panel"><span class="label">Plan · ' + fmtRange(wk.start, wk.end) + '</span>' +
     '<label class="field" style="margin-top:12px"><input id="planIn" inputmode="decimal" autocomplete="off" placeholder="' + Math.round(s.act.perWeek) + '" value="' + (cur ? cur.value : '') + '"><span class="r">hrs</span></label>' +
     '<p class="hint" id="planPrev">How many hours you think you’ll work. The other weeks adjust.</p>' +
+    (cur ? '<p class="hint" style="margin-top:2px">Planned' + (loggedOn(cur) || '') + '.</p>' : '') +
     '<p class="err" id="planErr" hidden></p>' +
     '<div class="acts" style="margin-top:16px"><button class="ghost" data-act="planClear">' + (cur ? 'Clear plan' : 'Cancel') + '</button><button class="btn" data-act="planSave">Save</button></div></div>';
   document.body.appendChild(el);
@@ -539,21 +603,46 @@ function previewPlan() {
     : a.perWeek ? 'Then the other weeks need about ' + Math.round(a.perWeek) + ' each.' : 'That covers it.';
 }
 function closePlan() { const el = $('planSheet'); if (el) el.remove(); }
+const loggedOn = e => e && e.logged ? ' on ' + fmtDay(dayOf(e.logged)) : '';
+
+// A finished week: its hours, where they came from, and when you logged them.
+function openWeek(iso) {
+  const s = getStatus(state), look = s.look, start = dayOf(iso), wk = { start, end: start + 6 };
+  const h = look.hours.get(start), c = look.checks.get(s.sch.periodAt(start).start);
+  const shifts = [];
+  for (let d = start; d <= wk.end; d++) if (look.shifts.get(d)) shifts.push(look.shifts.get(d));
+  let big = '–', from = 'Nothing logged for this week.';
+  if (h && h.value != null) { big = fmtH(h.value); from = 'Weekly total, logged' + loggedOn(h) + '.'; }
+  else if (h) { big = '?'; from = 'Marked “don’t know”. Its check fills it in.'; }
+  else if (shifts.length) { big = fmtH(shifts.reduce((t, e) => t + e.value, 0)); from = 'From ' + plural(shifts.length, 'shift') + ': ' + shifts.map(e => short(WEEKDAYS[partsOf(dayOf(e.start)).wd]) + ' ' + fmtH(e.value)).join(', ') + '. Last logged' + loggedOn(shifts.reduce((a, b) => (a.logged || '') > (b.logged || '') ? a : b)) + '.'; }
+  else if (c) { big = '~' + Math.round(c.hours / (s.sch.every / 7)); from = 'From your ' + fmtDay(dayOf(c.end) + s.sch.lag) + ' paycheck (' + fmtH(c.hours) + ' hrs over ' + plural(s.sch.every / 7, 'week') + '), logged' + loggedOn(c) + '.'; }
+  const el = document.createElement('div');
+  el.className = 'sheet'; el.id = 'planSheet';
+  el.innerHTML = '<div class="panel"><span class="label">Week · ' + fmtRange(wk.start, wk.end) + '</span>' +
+    '<div class="big" style="justify-content:flex-start;margin-top:8px"><b style="font-size:64px">' + big + '</b><span style="font-size:24px">hrs</span></div>' +
+    '<p class="hint">' + from + '</p>' +
+    '<div class="acts" style="margin-top:16px"><button class="ghost" data-act="closeSheet">Close</button><button class="btn" data-act="editWeeks">Edit</button></div></div>';
+  document.body.appendChild(el);
+}
 
 function upsertHours(startIso, value) {
   const e = state.events.find(x => x.type === 'hours' && x.start === startIso);
-  if (e) e.value = value;
-  else state.events.push({ id: newId(), type: 'hours', start: startIso, end: isoOf(dayOf(startIso) + 6), label: 'Week', ref: 'job', value });
+  if (e) Object.assign(e, { value, logged: isoOf(today()) });
+  else state.events.push({ id: newId(), type: 'hours', start: startIso, end: isoOf(dayOf(startIso) + 6), label: 'Week', ref: 'job', value, logged: isoOf(today()) });
+}
+function upsertShift(dayIso, value) {
+  state.events = state.events.filter(x => !(x.type === 'shift' && x.start === dayIso));
+  if (value) state.events.push({ id: newId(), type: 'shift', start: dayIso, end: dayIso, label: 'Shift', ref: 'job', value, logged: isoOf(today()) });
 }
 function upsertCheck(startIso, endIso, payIso, net, hrs) {
   const e = state.events.find(x => x.type === 'check' && x.start === startIso);
   const label = fmtDay(dayOf(payIso)) + ' check';
-  if (e) Object.assign(e, { value: net, hours: hrs, label });
-  else state.events.push({ id: newId(), type: 'check', start: startIso, end: endIso, label, ref: 'job', value: net, hours: hrs });
+  if (e) Object.assign(e, { value: net, hours: hrs, label, logged: isoOf(today()) });
+  else state.events.push({ id: newId(), type: 'check', start: startIso, end: endIso, label, ref: 'job', value: net, hours: hrs, logged: isoOf(today()) });
 }
 function upsertPocket(dayIso, value) {
   state.events = state.events.filter(x => !(x.type === 'pocket' && x.start === dayIso));
-  state.events.push({ id: newId(), type: 'pocket', start: dayIso, end: dayIso, label: 'Pocket card', ref: null, value });
+  state.events.push({ id: newId(), type: 'pocket', start: dayIso, end: dayIso, label: 'Pocket card', ref: null, value, logged: dayIso });
 }
 function removeWhere(type, startIso) { state.events = state.events.filter(x => !(x.type === type && x.start === startIso)); }
 
@@ -758,6 +847,10 @@ function start() {
     const act = b.dataset.act;
     if (act === 'saveLog') saveLog();
     if (act === 'plan') openPlan(b.dataset.w);
+    if (act === 'week') openWeek(b.dataset.w);
+    if (act === 'closeSheet') closePlan();
+    if (act === 'editWeeks') { closePlan(); history.pushState({ page: 'log' }, ''); logMode = 'earlier'; openScreen('log'); }
+    if (act === 'part') partClouds();
     if (act === 'planClear') { const el = $('planSheet'); if (state.events.some(x => x.type === 'plan' && x.start === el.dataset.w)) { setPlan(state, el.dataset.w, null); save(); } closePlan(); renderHome(); }
     if (act === 'planSave') {
       const v = num($('planIn').value);
@@ -796,6 +889,12 @@ function start() {
   });
 
   document.addEventListener('click', e => { if (e.target.id === 'planSheet') closePlan(); });
+  document.addEventListener('change', e => {
+    if (e.target.dataset && e.target.dataset.k === 'day') {
+      const sh = lookup(state).shifts.get(dayOf(e.target.value));
+      document.querySelector('#log [data-k="shift"]').value = sh ? sh.value : '';
+    }
+  });
   document.addEventListener('input', e => {
     if (e.target.id === 'planIn') return previewPlan();
     if (!$('log').hidden) { confirmWarn = false; refreshLogHints(); }
@@ -817,13 +916,16 @@ function start() {
   let y0 = null;
   document.addEventListener('touchstart', e => { y0 = e.target.closest('#home') ? e.touches[0].clientY : null; }, { passive: true });
   document.addEventListener('touchend', e => {
-    if (y0 !== null && state && $('home').querySelector('[data-swipe]') && y0 - e.changedTouches[0].clientY > 70) go('log');
+    if (y0 !== null && state && $('cover') && y0 - e.changedTouches[0].clientY > 50) partClouds();
     y0 = null;
   }, { passive: true });
 
   let shown = today();
   setInterval(() => { if (state && !$('home').hidden && today() !== shown) { shown = today(); renderHome(); } }, 60000);
-  document.addEventListener('visibilitychange', () => { if (state && !document.hidden && !$('home').hidden) renderHome(); });
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) cloudsParted = false;   // the clouds come back next time you open it
+    else if (state && !$('home').hidden) renderHome();
+  });
 
   if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('../sw.js').catch(() => {});
 }

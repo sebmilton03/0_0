@@ -18,6 +18,14 @@ Rough order, most valuable first.
   time off beyond it.
 - Next check estimate, as one line.
 
+### Built 2026-09-23
+- Log a shift: this week counts down, with a bar. A week of shifts counts as logged; a weekly
+  total replaces them. (Was I.)
+- Clouds over chillin: fluff peeks, swipe up to part them. (Was K.)
+- Tap any week: its hours, where they came from, when you logged them. (Was L.)
+- +1 hold and slide, sets saved, "Best set" with a history of your best set each day. (Were H, M.)
+- Chillin stacks on the start screen: "You're hecka chillin" when both apps are quiet. (Was N.)
+
 ### F. Buckets for extra money
 Seb wants to see extra money and choose buckets for it (reserves, #2). At $22.67/hr, a normal week is
 ~33 hrs. His recent weeks average ~33, so there's no surplus yet. At 38.5 hrs/wk it'd be ~$500/month.
@@ -71,6 +79,22 @@ It starts almost bare and grows as someone shows up consistently. Features arriv
 is ready for them, never as points or badges. This is Seb's own build rule ("nothing new until the
 last thing survived a real cycle") turned into the product. Never lock anything someone needs
 (export, their data).
+
+### Q. The roadmap Seb laid out (2026-09-23)
+In his priority order: bare minimums (work and money, done) → school (20 hrs/wk, counter like +1) →
+cleaning → sleep (maybe #1, e.g. an hour of wind-down) → exercise → food (recipe and meal-plan deck) →
+outside time (once a week, with a deck of places, reviews and directions).
+- **Three shapes, not seven apps:** Money (hard totals) · Habits (a target on a daily, weekly or
+  monthly clock with a counter: school, exercise, sleep, outside) · Decks (things to shuffle
+  through: meals, places).
+- School: each week starts fresh at 20. **No carry-over**, unlike money, because missed study
+  hours piling up is how a habit gets abandoned.
+- Cleaning: already a working habit, so don't build it unless it breaks.
+- Sleep: track what's controllable (wind-down start), not hours slept. Try Pixel Bedtime mode
+  first, which needs no code.
+- Outside places: Google Maps saved lists already do places, reviews and directions. The app's part
+  is "outside this week?" plus maybe "pick one for me".
+- One module a month at most. This is a roadmap, not a build list.
 
 ### G. +1's own parked list (from its IDEAS.md)
 History calendar · rest-day forest · friends syncing and comparing · custom exercise name ·

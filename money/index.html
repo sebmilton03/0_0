@@ -64,6 +64,15 @@
   .bar .gap { width: 3px; margin-left: -1.5px; background: var(--bg); }
   .bar .now { top: -4px; bottom: -4px; border: 1.5px solid rgba(255, 255, 255, .6); border-radius: 8px; }
   .barl { display: flex; justify-content: space-between; margin-top: 12px; font-size: 15px; color: var(--muted); }
+  .wkbar { height: 8px; margin: 18px auto 0; max-width: 260px; border-radius: 4px; background: #262626; overflow: hidden; }
+  .wkbar i { display: block; height: 100%; border-radius: 4px; background: var(--green); }
+  .field.stack select { width: 100%; background: none; border: none; outline: none; color: var(--text); font: inherit; font-size: 22px; font-weight: 700; padding: 6px 0; color-scheme: dark; }
+  .cover { position: fixed; inset: 0; z-index: 5; background: var(--bg); overflow: hidden; transition: background .6s .25s; }
+  .cover-in { max-width: 440px; height: 100%; margin: 0 auto; display: flex; flex-direction: column; padding: calc(22px + env(safe-area-inset-top)) 22px calc(96px + env(safe-area-inset-bottom)); transition: opacity .45s, transform .6s; }
+  .cover.part { background: rgba(10, 10, 10, 0); pointer-events: none; }
+  .cover.part .cover-in { opacity: 0; transform: translateY(-60px); }
+  .fluff { position: absolute; left: 0; right: 0; bottom: 0; height: 110px; cursor: pointer; }
+  .puff { position: absolute; bottom: -60px; margin-left: -60px; border-radius: 50%; background: radial-gradient(circle at 45% 40%, rgba(255, 255, 255, .17), rgba(255, 255, 255, .06) 55%, rgba(255, 255, 255, 0) 70%); transition: transform 1.05s cubic-bezier(.2, .7, .2, 1), opacity 1s; }
   .weeks { display: flex; gap: 6px; margin-top: 30px; }
   .wk { flex: 1; min-width: 0; padding: 9px 4px 10px; border-radius: 14px; background: var(--card); text-align: center; border: 1.5px solid transparent; }
   .wk span { display: block; font-size: 11.5px; color: var(--muted); white-space: nowrap; }

@@ -219,6 +219,19 @@
   nc = getStatus(oct12(), D('2026-10-12')).nextCheck;
   eq('next check Oct 26: 45 logged + 45 still needed ≈ $1,625', [isoOf(nc.pay), Math.round(nc.amount)], ['2026-10-26', 1625]);
 
+  // --- Shifts: this week counts down; a finished week of shifts counts as logged
+  const shift = (s, iso, h) => s.events.push({ id: 's' + iso, type: 'shift', start: iso, end: iso, label: '', ref: 'job', value: h });
+  let sh = planned(); shift(sh, '2026-09-21', 6.5); shift(sh, '2026-09-22', 7);
+  tw = thisWeek(getStatus(sh, D('2026-09-22')));
+  eq('two shifts: 13.5 of 33 worked this week', [tw.hours, tw.worked], [33, 13.5]);
+  sh = planned(); ['2026-09-21', '2026-09-22', '2026-09-24', '2026-09-25', '2026-09-26'].forEach((d, i) => shift(sh, d, [6, 7, 7, 7, 7][i])); pocket(sh, '2026-09-28', 100);
+  let shs = getStatus(sh, D('2026-09-28'));
+  eq('a week of shifts (34) isn’t due on Monday and shows 34', [shs.due.weeks.length, weekStrip(shs)[0].hours, !!weekStrip(shs)[0].approx], [0, 34, false]);
+  week(sh, '2026-09-21', 36);
+  eq('a weekly total replaces the shifts', weekStrip(getStatus(sh, D('2026-09-28')))[0].hours, 36);
+  const noShift = planned(); pocket(noShift, '2026-09-28', 100);
+  eq('no shifts and no total: the week is due', getStatus(noShift, D('2026-09-28')).due.weeks.map(w => isoOf(w.start)), ['2026-09-21']);
+
   // --- Show results
   const bad = results.filter(x => !x.ok);
   document.getElementById('sum').className = bad.length ? 'bad' : 'ok';

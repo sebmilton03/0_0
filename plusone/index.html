@@ -71,7 +71,7 @@
     position: relative; flex: 1; min-height: 300px; margin-top: 20px; padding: 0;
     border: 1px solid var(--line); border-radius: 28px; background: var(--card);
     overflow: hidden; isolation: isolate;
-    touch-action: manipulation;
+    touch-action: none;
     transition: --p .35s cubic-bezier(.2,.8,.2,1), border-color .3s, transform .08s;
   }
   #btn:active { transform: scale(.985); }
@@ -98,7 +98,21 @@
   @keyframes plus { from { transform: translate(-50%, -50%); opacity: 1; } to { transform: translate(-50%, -140%); opacity: 0; } }
   body.blackout .lbl, body.blackout .plus { color: #fff; mix-blend-mode: difference; }
 
+  /* Hold and slide: the button turns amber, fizzes at the edges, and shows how many you're adding */
+  #slide { position: absolute; inset: 0; z-index: 3; display: none; flex-direction: column; align-items: center; justify-content: center; border-radius: inherit; background: #E8A857; color: #1a1204; pointer-events: none; overflow: hidden; }
+  #btn.live #slide { display: flex; }
+  #slide b { font-size: 96px; font-weight: 700; letter-spacing: -3px; line-height: 1; font-variant-numeric: tabular-nums; }
+  #slide small { margin-top: 10px; font-size: 15px; font-weight: 600; opacity: .75; }
+  .bub { position: absolute; bottom: -24px; border-radius: 50%; border: 2px solid rgba(255,255,255,.85); background: rgba(255,255,255,.28); animation: bub 1.5s ease-out forwards; }
+  @keyframes bub { to { transform: translate(var(--dx), -460px) scale(.35); opacity: 0; } }
   .row { display: flex; gap: 8px; margin-top: 12px; }
+  .pill.best { margin-left: auto; color: var(--text); }
+  .pill.best small { color: var(--muted); margin-left: 6px; }
+  .hist { margin: 16px 0 0; padding: 0; list-style: none; max-height: 50vh; overflow-y: auto; }
+  .hist li { display: flex; align-items: center; gap: 12px; padding: 8px 0; font-size: 15px; color: var(--muted); }
+  .hist li span { width: 92px; flex: none; }
+  .hist li i { height: 10px; border-radius: 5px; background: var(--mint); }
+  .hist li b { color: var(--text); font-weight: 600; min-width: 28px; }
   .pill { padding: 8px 18px; border: 1px solid var(--line); border-radius: 999px; background: none; color: var(--muted); font-size: 15px; }
   .pill:active { transform: scale(.94); }
 
@@ -163,12 +177,13 @@
     <div class="fill"></div>
     <div class="lbl" id="leftL"><b id="leftN"></b><small>left</small></div>
     <div class="lbl" id="doneL"><b id="doneN"></b><small id="doneS">done</small></div>
+    <div id="slide"><b id="slideN">+0</b><small id="slideS">slide up to add · down to take off</small></div>
     <div id="restL" hidden>
       <svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3c.132 0 .263 0 .393 0a7.5 7.5 0 0 0 7.92 12.446a9 9 0 1 1 -8.313 -12.454z"/></svg>
       <b id="restT">Rest day</b><small id="restS"></small>
     </div>
   </button>
-  <div class="row"><button class="pill" id="undo" aria-label="Remove one">−1</button><button class="pill" id="editBtn">Edit</button></div>
+  <div class="row"><button class="pill" id="undo" aria-label="Remove one">−1</button><button class="pill" id="editBtn">Edit</button><button class="pill best" id="bestBtn" hidden></button></div>
 </main>
 
 <div class="sheet" id="edit" hidden>
@@ -179,6 +194,16 @@
     <p class="hint" id="eHint"></p>
     <p class="err" id="eErr" hidden></p>
     <div class="acts"><button class="ghost" id="eCancel">Cancel</button><button class="cta" id="eSave">Save</button></div>
+  </div>
+</div>
+
+<div class="sheet" id="hist" hidden>
+  <div class="panel">
+    <h2 id="hBest">Best set</h2>
+    <p class="hint" id="hSub"></p>
+    <ul class="hist" id="hList"></ul>
+    <p class="hint">Your best set each day. A slide counts as one set, and so do quick taps in a row.</p>
+    <button class="ghost" id="hClose">Close</button>
   </div>
 </div>
 
@@ -250,11 +275,12 @@
       songs: [],   // dates a song was marked made
       rules: [],   // [{ at: date, rule: [1, 2, 'rest', ...] }], each takes effect on `at`
       rested: [],  // rest days tapped as done
+      sets: {},    // reps in each set, per date: a slide is one set, so are quick taps in a row
     };
   }
   // The first two versions saved the running totals instead; their targets always equalled the day.
   function migrate(s) {
-    if (s.v === 3) { s.rested ??= []; return s; }
+    if (s.v === 3) { s.rested ??= []; s.sets ??= {}; return s; }
     if (s.used !== undefined) {
       const n = s.settled + 1 - s.start + 1;
       s.skips = s.blackout ? 0 : Math.max(0, 1 + Math.floor(n / 10) - s.used);
@@ -268,7 +294,7 @@
         from: s.settled + 1, start: s.start, num: last, skips: s.skips, lastEarned: s.lastEarned,
         lastDone: { n: lastDone, day: lastDone }, song: s.song, blackout: s.blackout, base: s.base, log: s.log,
       },
-      done: s.done, songs: [], rules: [], rested: [],
+      done: s.done, songs: [], rules: [], rested: [], sets: {},
     };
   }
   function load() {
@@ -416,13 +442,42 @@
     // One line for the 0_0 start screen.
     const line = dark ? 'Blackout · ' + (tgt - n) + ' left' : rest ? (rested ? 'Rested' : 'Rest day')
       : complete ? 'Day ' + day.no + ' · done' : 'Day ' + day.no + ' · ' + (tgt - n) + ' left';
-    try { localStorage.setItem('plus-one-line', JSON.stringify({ day: t, text: line })); } catch {}
+    try { localStorage.setItem('plus-one-line', JSON.stringify({ day: t, text: line, done: !dark && (complete || rested) })); } catch {}
+    const best = bestSet();
+    $('bestBtn').hidden = !best;
+    if (best) $('bestBtn').innerHTML = 'Best set ' + best.reps + '<small>' + shortDate(best.day) + '</small>';
   }
 
   function buzz(p) { try { navigator.vibrate && navigator.vibrate(p); } catch {} }
   function pulse(el, cls) { el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); }
 
-  $('btn').onclick = e => {
+  // Sets: quick taps within 8 seconds of each other count as one set.
+  const TAP_GAP = 8000;
+  let lastTap = null;
+  function addToSets(t, reps, fromTap) {
+    const sets = state.sets[t] ||= [];
+    if (fromTap && lastTap && lastTap.day === t && Date.now() - lastTap.at < TAP_GAP && sets.length) sets[sets.length - 1] += reps;
+    else sets.push(reps);
+    lastTap = fromTap ? { day: t, at: Date.now() } : null;
+  }
+  // Take reps off the most recent sets first (for −1, a slide down, or an edit lower).
+  function takeFromSets(t, reps) {
+    const sets = state.sets[t] || [];
+    while (reps > 0 && sets.length) {
+      const k = Math.min(reps, sets[sets.length - 1]);
+      sets[sets.length - 1] -= k; reps -= k;
+      if (!sets[sets.length - 1]) sets.pop();
+    }
+    if (!sets.length) delete state.sets[t];
+  }
+  function bestSet() {
+    let best = null;
+    for (const [d, sets] of Object.entries(state.sets || {})) for (const r of sets) if (!best || r > best.reps) best = { reps: r, day: +d };
+    return best;
+  }
+  const shortDate = d => new Date(d * 864e5).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+  function tapBtn(e) {
     const t = today(), day = replay(t).today, tgt = target(day), n = state.done[t] || 0;
     // A rest day fills all at once with one tap.
     if (day.kind === 'rest') {
@@ -436,6 +491,7 @@
     }
     if (n >= tgt) { buzz(20); render(); return; }
     state.done[t] = n + 1;
+    addToSets(t, 1, true);
     save();
     render();
 
@@ -455,7 +511,88 @@
     } else {
       buzz(8);
     }
+  }
+
+  // Hold (or start dragging) and the button goes amber. Slide up to add, down to take off,
+  // one buzz per rep, faster the further you go. Let go to save it as one set.
+  const STEP = 14;
+  let press = null;
+  function repsFor(dy) {
+    const a = Math.abs(dy), r = Math.floor(a / STEP + Math.max(0, a - 180) / 7);
+    return dy < 0 ? -r : r;
+  }
+  function startSlide() {
+    if (!press || press.live) return;
+    press.live = true;
+    $('btn').classList.add('live');
+    $('slideN').textContent = '+0';
+    buzz(15);
+    press.bubbles = setInterval(() => {
+      const b = document.createElement('i'), left = Math.random() < .5, size = 6 + Math.random() * 16;
+      b.className = 'bub';
+      b.style.width = b.style.height = size + 'px';
+      b.style[left ? 'left' : 'right'] = (4 + Math.random() * 26) + 'px';
+      b.style.setProperty('--dx', (left ? 1 : -1) * Math.random() * 30 + 'px');
+      $('slide').appendChild(b);
+      setTimeout(() => b.remove(), 1500);
+    }, 140);
+  }
+  function endSlide() {
+    clearTimeout(press.timer);
+    clearInterval(press.bubbles);
+    $('btn').classList.remove('live');
+    $('slide').querySelectorAll('.bub').forEach(b => b.remove());
+  }
+  $('btn').addEventListener('pointerdown', e => {
+    const day = replay(today()).today;
+    press = { y: e.clientY, live: false, count: 0, rest: day.kind === 'rest' };
+    if (!press.rest) press.timer = setTimeout(startSlide, 280);
+    try { $('btn').setPointerCapture(e.pointerId); } catch {}
+  });
+  $('btn').addEventListener('pointermove', e => {
+    if (!press || press.rest) return;
+    const dy = press.y - e.clientY;
+    if (!press.live && Math.abs(dy) > 12) startSlide();
+    if (!press.live) return;
+    const t = today(), n = state.done[t] || 0;
+    const c = Math.max(-n, Math.min(repsFor(dy), 500));
+    if (c !== press.count) {
+      press.count = c;
+      $('slideN').textContent = (c > 0 ? '+' : c < 0 ? '−' : '+') + Math.abs(c);
+      buzz(6);
+    }
+  });
+  $('btn').addEventListener('pointerup', e => {
+    if (!press) return;
+    const p = press;
+    endSlide();
+    press = null;
+    if (!p.live) return tapBtn(e);
+    if (!p.count) return;
+    const t = today(), day = replay(t).today, tgt = target(day), n = state.done[t] || 0;
+    const next = n + p.count;
+    if (next) state.done[t] = next; else delete state.done[t];
+    if (p.count > 0) addToSets(t, p.count, false); else takeFromSets(t, -p.count);
+    save();
+    render();
+    if (p.count > 0 && n < tgt && next >= tgt) {
+      buzz([30, 60, 30]);
+      pulse($('btn'), 'burst');
+      if (day.kind === 'blackout') pulse($('flash'), 'on');
+    } else buzz(12);
+  });
+  $('btn').addEventListener('pointercancel', () => { if (press) { endSlide(); press = null; } });
+
+  // Best set history: your best set each day, newest first.
+  $('bestBtn').onclick = () => {
+    const best = bestSet(), days = Object.entries(state.sets || {}).map(([d, s]) => [+d, Math.max(...s)]).sort((a, b) => b[0] - a[0]);
+    $('hBest').textContent = 'Best set · ' + best.reps;
+    $('hSub').textContent = 'Set on ' + shortDate(best.day) + '.';
+    $('hList').innerHTML = days.map(([d, r]) => '<li><span>' + shortDate(d) + '</span><i style="width:' + Math.max(4, r / best.reps * 100) * .6 + '%"></i><b>' + r + '</b></li>').join('');
+    $('hist').hidden = false;
   };
+  $('hClose').onclick = () => { $('hist').hidden = true; };
+  $('hist').onclick = e => { if (e.target === $('hist')) $('hist').hidden = true; };
 
   // Take one off today. Dropping below 100 on a rebirth day takes the rebirth back.
   $('undo').onclick = () => {
@@ -469,6 +606,7 @@
     }
     if (!n) { buzz(20); return; }
     if (n === 1) delete state.done[t]; else state.done[t] = n - 1;
+    takeFromSets(t, 1);
     save();
     render();
     buzz(8);
@@ -508,6 +646,8 @@
     }
     const cap = target(replay(today()).days[editDay]);
     const n = Math.min(v, cap);
+    const had = (state.sets[editDay] || []).reduce((a, b) => a + b, 0);
+    if (n < had) takeFromSets(editDay, had - n);
     if (n) state.done[editDay] = n; else delete state.done[editDay];
     save();
     $('edit').hidden = true;
