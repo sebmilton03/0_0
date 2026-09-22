@@ -23,6 +23,55 @@ Seb wants to see extra money and choose buckets for it (reserves, #2). At $22.67
 ~33 hrs. His recent weeks average ~33, so there's no surplus yet. At 38.5 hrs/wk it'd be ~$500/month.
 **Decide after Oct 31**, once a real month shows whether there's money to divide.
 
+### H. +1: hold and slide to count (Seb, 2026-09-22)
+Tap still adds 1. Hold, and the button turns **amber** (amber = a gesture is live) with bubbles
+fizzing at the sides. Slide up to count up (one buzz per rep, bigger slide = faster), slide down to
+take off, and let go to save. A big "+12" shows in the middle. It fixes tapping 30 times and losing
+count. +1 is past its one-day cycle, so this can be built whenever.
+
+### I. Money: "add a shift" mid-week
+Optional: after a shift, type its hours (6.5) and this week's number counts down. On Sunday the
+printout total replaces the shift adds. Skipping it changes nothing.
+
+### J. Training: +1 grown into a full module (vision: mockups/0_0-training-vision.png)
+Goal + plan + why one tap away. Home shows only today's session. A "how do you feel" check-in bends
+the week (Beat → rest, the session moves), like a short week in Money. The only tracking is a test
+every 4 weeks. Never: calories, badges, points, streak scores, or a diary. Needs Money to survive
+October first. Open questions: gym or home, the real goal, how many days a week fit around work and school.
+
+### K. Clouds over chillin (Seb, 2026-09-22), next build
+Chillin shouldn't feel locked. Cover the numbers with clouds, with a little fluff peeking at the
+bottom as the only hint. Swipe up and the clouds part and drift away, revealing the normal screen
+(numbers, Log). They come back next time you open it. Quiet, not hidden.
+
+### L. "Last updated" when you tap a week, next build
+Tap any week box and it shows what's there and when you logged it ("38 hrs · logged Sun Sep 27").
+Not on Home. Events need a `logged` date from now on; older ones just say "logged".
+
+### M. +1: best set, from the input itself
+Once hold-and-slide exists, each release is one set (quick taps in a row count as one set too).
+Save sets per day, and "best set" falls out for free: one line, "Best set: 22 (Sep 30)". Nothing
+extra to type. This is screen 7 of the Training vision starting small.
+
+### N. Chillin that stacks across the suite
+On the start screen, when every app is quiet: 1 = "You're chillin", 2 = "You're hecka chillin", 3 =
+"You're mega chillin bruh". It's a state, not a score or streak, and only when every module agrees.
+
+### O. Training, the real starting shape (Seb's answers)
+No gym: home and the track. Goal: overall health, feeling good, looking good, natural flexible
+strength. Skills later: splits, handstand, backflip, 2 plates (needs a barbell, so a gym or rack
+later). **The #1 goal is consistency.** Rhythm, like cleaning: daily = +1 push-ups through the day,
+weekly = one session, monthly = the deep clean (a long run, like 5 miles). This replaces the 3-days-a-
+week plan in the vision image.
+- Same hold-and-slide input, a different picture per activity: a button that fills for reps, a track
+  loop that fills for laps or distance.
+
+### P. "Grows with you" (if 0_0 is ever for other people)
+It starts almost bare and grows as someone shows up consistently. Features arrive when the person
+is ready for them, never as points or badges. This is Seb's own build rule ("nothing new until the
+last thing survived a real cycle") turned into the product. Never lock anything someone needs
+(export, their data).
+
 ### G. +1's own parked list (from its IDEAS.md)
 History calendar · rest-day forest · friends syncing and comparing · custom exercise name ·
 slide-to-count. See `Pushup Tracker/IDEAS.md` for detail.
