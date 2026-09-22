@@ -25,6 +25,12 @@ a bill. One long purple line (about 5,000px, so ten minutes visibly moves it) fi
 Start runs off a timestamp, so it survives the phone sleeping; over 8 hours is treated as a mistake
 and capped. Forgot to start? Add minutes by hand. Quiet when the week's done.
 
+**Study's list.** Swipe or tap across from Hours. A thing can hold things, as deep as it goes:
+"Final study" → "Chapter 4" → "problems 1–20". A parent shows "3 of 8" and is done when everything
+inside it is. Tap a row to open it, swipe it right to tick it off (that ticks everything inside),
+Edit lives inside. Class carries down, so you pick it once. Due, do-it-on and priority sit on any
+level. Overdue goes amber, never red.
+
 **+1.** One number a day that grows by one. Tap adds 1. Hold and slide adds or takes off many (amber
 means a gesture is live). Each slide is a set, and your best set is kept with its history.
 

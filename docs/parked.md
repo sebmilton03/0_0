@@ -26,7 +26,11 @@ Rough order, most valuable first.
 - **Still to build from this round:** nested to-dos in Study (below), per-module chillin for +1,
   and the Money week planner (set each day's shift).
 
-### R. Nested to-dos (Seb, 2026-09-23)
+### Built: nested to-dos (2026-09-23)
+Shipped as the To-do tab in Study, as described below. Still parked from that round: per-module
+chillin for +1, and the Money week planner (set each day's shift).
+
+### R. Nested to-dos (Seb, 2026-09-23) — built
 A thing can hold things: "Final study" → "Chapter 4" → "practice problems", as deep as it goes. A
 parent shows its children's progress (3 of 8) and is done when they are. Tap to open a level, swipe
 to tick off, add a child from inside a parent. Class, due date, do-it-on date and priority live on

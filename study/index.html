@@ -62,6 +62,32 @@
   .chips { display: flex; gap: 8px; margin-top: 12px; }
   .chip { flex: 1; height: 44px; border-radius: 22px; background: #0f0f0f; display: grid; place-items: center; font-size: 15px; font-weight: 600; color: #ddd; }
   .chip.on { background: #fff; color: #0a0a0a; }
+  .tabs { display: flex; gap: 6px; margin-top: 16px; background: #141414; border-radius: 22px; padding: 4px; }
+  .tabs button { flex: 1; height: 38px; border-radius: 19px; font-size: 15px; font-weight: 600; color: var(--muted); }
+  .tabs button.on { background: #262626; color: var(--text); }
+  .crumb { display: flex; align-items: center; gap: 8px; margin-top: 18px; font-size: 20px; font-weight: 700; }
+  .crumb button { color: var(--muted); font-size: 24px; }
+  .crumb small { display: block; font-size: 13px; font-weight: 500; color: var(--muted); margin-top: 2px; }
+  .list { margin-top: 12px; }
+  .swipe { position: relative; border-radius: 16px; overflow: hidden; margin-top: 8px; }
+  .swipe .tick { position: absolute; inset: 0; background: #18402f; color: var(--green); display: flex; align-items: center; padding-left: 20px; font-size: 16px; font-weight: 600; }
+  .row { position: relative; display: flex; align-items: center; gap: 12px; padding: 14px 16px; background: var(--card); border-radius: 16px; width: 100%; text-align: left; transition: transform .18s; }
+  .row .t { flex: 1; min-width: 0; font-size: 16.5px; }
+  .row .t small { display: block; font-size: 13.5px; color: var(--muted); margin-top: 3px; }
+  .row .t small.late { color: var(--amber); }
+  .row .cl { font-size: 11px; font-weight: 700; letter-spacing: .8px; color: #0a0a0a; background: #8d8d8d; border-radius: 6px; padding: 3px 6px; flex: none; }
+  .row .p { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .row .go { color: #555; font-size: 20px; flex: none; }
+  .row.done .t { color: #5e5e5e; text-decoration: line-through; }
+  .row.done .cl { background: #3a3a3a; color: #777; }
+  .row.done .p { opacity: .35; }
+  .empty { margin-top: 40px; text-align: center; font-size: 16px; color: var(--muted); line-height: 1.6; }
+  .add { width: 100%; height: 48px; margin-top: 12px; border: 1px dashed #3a3a3a; border-radius: 16px; color: var(--muted); font-size: 15px; }
+  .panel .field.small input { font-size: 22px; font-weight: 600; }
+  .dates { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
+  .date { display: block; background: #0f0f0f; border-radius: 16px; padding: 10px 14px; }
+  .date span { display: block; font-size: 12px; color: var(--muted); }
+  .date input { width: 100%; margin-top: 4px; background: none; border: none; outline: none; font-size: 16px; color-scheme: dark; padding: 0; }
 </style>
 </head>
 <body>
@@ -84,13 +110,38 @@ const fmtDay = d => { const x = new Date(d * DAY); return short(WEEKDAYS[x.getUT
 const mondayOf = d => d - ((new Date(d * DAY).getUTCDay() + 6) % 7);   // weeks run Mon–Sun
 const hrs = m => String(Math.round(m / 6) / 10);                      // minutes → 7.5
 const clock = m => Math.floor(m / 60) + ':' + String(Math.floor(m % 60)).padStart(2, '0');
+const esc = t => String(t).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
 const $ = id => document.getElementById(id);
-let state = null, sheet = null, tick = null;
+let state = null, sheet = null, tick = null, view = 'hours', openId = null, editId = null;
 
 function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } }
 function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} }
-function fresh() { return { v: 1, target: 20, days: {}, running: null }; }
+function fresh() { return { v: 1, target: 20, days: {}, running: null, tasks: [] }; }
+
+/* ---------- The list ----------
+   A thing can hold things, as deep as you like: "Final study" → "Chapter 4" → "problems 1–20".
+   A parent is done when everything inside it is. Class carries down, so you pick it once. */
+const kids = id => state.tasks.filter(t => t.parent === id);
+const isDone = t => { const k = kids(t.id); return k.length ? k.every(isDone) : !!t.done; };
+const taskById = id => state.tasks.find(t => t.id === id) || null;
+function tickAll(t, val) { const k = kids(t.id); if (k.length) k.forEach(c => tickAll(c, val)); else t.done = val; }
+function dropTask(t) { kids(t.id).forEach(dropTask); state.tasks = state.tasks.filter(x => x.id !== t.id); }
+function classOf(t) { let c = t; while (c) { if (c.cls) return c.cls; c = taskById(c.parent); } return ''; }
+const PRI = ['#6a6a6a', '#e8a857', '#e5645e'];
+function sortTasks(list) {
+  return list.slice().sort((a, b) =>
+    (isDone(a) - isDone(b)) || ((a.due || '9999') > (b.due || '9999') ? 1 : (a.due || '9999') < (b.due || '9999') ? -1 : 0) || (b.pri - a.pri));
+}
+function dueWords(t) {
+  if (!t.due) return t.doOn ? 'do it ' + niceDay(t.doOn) : '';
+  const late = dayOf(t.due) < today();
+  return (late ? 'was due ' + niceDay(t.due) : 'due ' + niceDay(t.due)) + (t.doOn ? ' · do it ' + niceDay(t.doOn) : '');
+}
+function niceDay(iso) {
+  const d = dayOf(iso) - today();
+  return d === 0 ? 'today' : d === 1 ? 'tomorrow' : d === -1 ? 'yesterday' : fmtDay(dayOf(iso));
+}
 
 // Minutes this week, plus whatever the running session has racked up.
 function running() { return state.running ? Math.max(0, (Date.now() - state.running) / 6e4) : 0; }
@@ -154,7 +205,39 @@ const GEAR = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke
 const bar = (face, dim) => '<div class="top' + (dim ? ' dim' : '') + '"><a class="mark" href="../" aria-label="All apps">' + face + '</a>' +
   '<button class="icon" data-act="settings" aria-label="Settings">' + GEAR + '</button></div>';
 
+const tabs = () => '<div class="tabs"><button data-act="tab" data-v="hours" class="' + (view === 'hours' ? 'on' : '') + '">Hours</button>' +
+  '<button data-act="tab" data-v="list" class="' + (view === 'list' ? 'on' : '') + '">To-do</button></div>';
+
+function listHTML() {
+  const here = openId ? taskById(openId) : null;
+  if (openId && !here) { openId = null; return listHTML(); }
+  const rows = sortTasks(kids(openId));
+  const trail = [];
+  for (let t = here; t; t = taskById(t.parent)) trail.unshift(t.title);
+  const head = here
+    ? '<div class="crumb"><button data-act="up">‹</button><div style="flex:1">' + esc(here.title) +
+      '<small>' + (classOf(here) ? esc(classOf(here)) + ' · ' : '') + (dueWords(here) || 'no date') + '</small></div>' +
+      '<button data-act="edit" style="font-size:15px;color:var(--muted)">Edit</button></div>'
+    : '';
+  const body = rows.length ? '<div class="list">' + rows.map(t => {
+    const k = kids(t.id), done = isDone(t), n = k.filter(isDone).length;
+    const meta = k.length ? n + ' of ' + k.length + (dueWords(t) ? ' · ' + dueWords(t) : '') : dueWords(t);
+    const late = !done && t.due && dayOf(t.due) < today();
+    return '<div class="swipe" data-swipe="' + t.id + '"><div class="tick">✓ ' + (done ? 'Undo' : 'Done') + '</div>' +
+      '<button class="row' + (done ? ' done' : '') + '" data-act="open" data-id="' + t.id + '">' +
+      (classOf(t) && !here ? '<span class="cl">' + esc(classOf(t)) + '</span>' : '') +
+      '<span class="t">' + esc(t.title) + (meta ? '<small class="' + (late ? 'late' : '') + '">' + esc(meta) + '</small>' : '') + '</span>' +
+      '<span class="p" style="background:' + PRI[t.pri || 0] + '"></span>' +
+      (k.length ? '<span class="go">›</span>' : '') + '</button></div>';
+  }).join('') + '</div>'
+    : '<p class="empty">' + (here ? 'Nothing inside this yet.<br>Break it into pieces.' : 'Nothing on the list.<br>Add a class, an assignment,<br>anything.') + '</p>';
+  return bar('Study') + tabs() + head + body +
+    '<button class="add" data-act="new">+ Add ' + (here ? 'inside ' + esc(here.title) : 'something') + '</button>' +
+    '<div class="spacer"></div>' + (here ? '' : '<p class="foot">Swipe a row to tick it off. Tap to open it or add pieces inside.</p>');
+}
+
 function render() {
+  if (view === 'list') { $('app').innerHTML = listHTML(); publish(status()); return; }
   const s = status(), frac = s.done / s.target;
   let html;
   if (s.full && !state.running) {
@@ -168,7 +251,7 @@ function render() {
       '<p class="sub"><b>' + hrs(s.done) + '</b> of ' + state.target + ' this week</p>' + lineSVG(Math.min(1, frac)) +
       '<div class="spacer"></div><div class="acts"><button class="ghost" data-act="cancel">Throw away</button><button class="btn" data-act="stop">Done</button></div>';
   } else {
-    html = bar('Study') + '<div class="label">This week · Mon – Sun</div>' +
+    html = bar('Study') + tabs() + '<div class="label" style="margin-top:20px">This week · Mon – Sun</div>' +
       '<div class="big"><b>' + hrs(s.done) + '</b><span>of ' + state.target + ' hrs</span></div>' +
       '<p class="sub">' + s.daysLeft + (s.daysLeft === 1 ? ' day' : ' days') + ' left · <b>about ' + hrs(s.perDay) + ' a day</b></p>' +
       lineSVG(frac) + '<div class="spacer"></div><button class="btn go" data-act="start">Start studying</button>' +
@@ -224,6 +307,26 @@ function addSheet() {
     '<div class="acts" style="margin-top:16px"><button class="ghost" data-act="close">Cancel</button><button class="btn" data-act="addSave">Add</button></div>');
   $('mins').focus();
 }
+function taskSheet(id) {
+  editId = id;
+  const t = id ? taskById(id) : null, parent = t ? taskById(t.parent) : (openId ? taskById(openId) : null);
+  const inherited = parent ? classOf(parent) : '';
+  openSheet('<span class="label" style="text-align:left;display:block">' + (t ? 'Edit' : parent ? 'Inside ' + esc(parent.title) : 'New thing') + '</span>' +
+    '<label class="field small"><input id="tTitle" autocomplete="off" placeholder="What it is" value="' + (t ? esc(t.title) : '') + '"></label>' +
+    (inherited ? '<p class="hint">Class: ' + esc(inherited) + ' (from ' + esc(parent.title) + ')</p>'
+      : '<label class="field small"><input id="tCls" autocomplete="off" placeholder="Class (optional)" value="' + (t && t.cls ? esc(t.cls) : '') + '" list="classes"></label>' +
+        '<datalist id="classes">' + [...new Set(state.tasks.map(x => x.cls).filter(Boolean))].map(c => '<option value="' + esc(c) + '">').join('') + '</datalist>') +
+    '<div class="dates"><label class="date"><span>Due</span><input type="date" id="tDue" value="' + (t && t.due ? t.due : '') + '"></label>' +
+    '<label class="date"><span>Do it on</span><input type="date" id="tDoOn" value="' + (t && t.doOn ? t.doOn : '') + '"></label></div>' +
+    '<div class="chips" id="pri">' + ['Low', 'Medium', 'High'].map((n, i) =>
+      '<button class="chip' + ((t ? t.pri || 0 : 0) === i ? ' on' : '') + '" data-pri="' + i + '">' + n + '</button>').join('') + '</div>' +
+    '<p class="err" id="tErr" hidden></p>' +
+    '<div class="acts" style="margin-top:16px">' +
+    (t ? '<button class="ghost" data-act="tDrop">Delete</button>' : '<button class="ghost" data-act="close">Cancel</button>') +
+    '<button class="btn" data-act="tSave">Save</button></div>');
+  $('tTitle').focus();
+}
+
 function settingsSheet() {
   openSheet('<span class="label" style="text-align:left;display:block">Hours a week</span>' +
     '<label class="field"><input id="tgt" inputmode="decimal" autocomplete="off" value="' + state.target + '"><span class="r">hrs</span></label>' +
@@ -264,6 +367,24 @@ document.addEventListener('click', e => {
     state.target = v; save(); closeSheet(); render();
   }
   if (act === 'close') closeSheet();
+  if (act === 'tab') { view = b.dataset.v; openId = null; render(); }
+  if (act === 'up') { const t = taskById(openId); openId = t ? t.parent : null; render(); }
+  if (act === 'open') { openId = b.dataset.id; render(); }   // tap opens it; swipe ticks it off
+  if (act === 'edit') taskSheet(openId);
+  if (act === 'new') taskSheet(null);
+  if (b.dataset.pri !== undefined) { sheet.querySelectorAll('[data-pri]').forEach(c => c.classList.toggle('on', c === b)); return; }
+  if (act === 'tSave') {
+    const title = $('tTitle').value.trim();
+    if (!title) { $('tErr').textContent = 'Give it a name.'; $('tErr').hidden = false; return; }
+    const pri = +sheet.querySelector('[data-pri].on').dataset.pri;
+    const cls = $('tCls') ? $('tCls').value.trim() : '';
+    const due = $('tDue').value, doOn = $('tDoOn').value;
+    const t = editId ? taskById(editId) : null;
+    if (t) Object.assign(t, { title, cls: $('tCls') ? cls : t.cls, due, doOn, pri });
+    else state.tasks.push({ id: Math.random().toString(36).slice(2, 9), title, cls, due, doOn, pri, done: false, parent: openId, at: isoOf(today()) });
+    save(); closeSheet(); render(); buzz(10);
+  }
+  if (act === 'tDrop') { const t = taskById(editId); if (t) { dropTask(t); save(); } closeSheet(); render(); }
   if (act === 'more') { state.running = Date.now(); save(); render(); startTick(); }
 });
 
@@ -280,9 +401,34 @@ function guard() {
 }
 
 state = load() || fresh();
+state.tasks ||= [];
 guard();
 render();
 startTick();
+// Swipe a row right to tick it off (everything inside it goes too).
+let sw = null;
+document.addEventListener('touchstart', e => {
+  const el = e.target.closest('[data-swipe]');
+  sw = el ? { el, x: e.touches[0].clientX, row: el.querySelector('.row') } : null;
+}, { passive: true });
+document.addEventListener('touchmove', e => {
+  if (!sw) return;
+  const dx = Math.max(0, Math.min(140, e.touches[0].clientX - sw.x));
+  sw.row.style.transition = 'none';
+  sw.row.style.transform = 'translateX(' + dx + 'px)';
+  sw.dx = dx;
+}, { passive: true });
+document.addEventListener('touchend', () => {
+  if (!sw) return;
+  sw.row.style.transition = '';
+  sw.row.style.transform = '';
+  if (sw.dx > 70) {
+    const t = taskById(sw.el.dataset.swipe);
+    if (t) { tickAll(t, !isDone(t)); save(); render(); buzz([15, 40]); }
+  }
+  sw = null;
+}, { passive: true });
+
 document.addEventListener('visibilitychange', () => { if (!document.hidden) { guard(); render(); startTick(); } });
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('../sw.js').catch(() => {});
 </script>
