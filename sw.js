@@ -1,14 +1,15 @@
 // Network first so a push shows up right away; falls back to the saved copy when offline.
-// The cache name can't clash with +1's, which lives on the same site.
-const CACHE = '0_0-money-v1';
-const FILES = ['./', './index.html', './money.js', './manifest.json', './icon-192.png', './icon-512.png'];
+// Covers the start screen and money. +1 keeps its own, in plusone/. Cache names must not clash
+// with the old +1 at /-1/, which lives on the same site.
+const CACHE = '0_0-v2';
+const FILES = ['./', './index.html', './manifest.json', './icon-192.png', './icon-512.png', './money/', './money/index.html', './money/money.js'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)));
   self.skipWaiting();
 });
 
-self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
+self.addEventListener('activate', e => e.waitUntil(caches.delete('0_0-money-v1').then(() => self.clients.claim())));
 
 self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET') return;

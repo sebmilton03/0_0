@@ -6,6 +6,6 @@
 - Be direct: no intros or outros. Challenge his reasoning and flag flaws before building. If you're
   unsure, say so. For real tradeoffs, give options with evidence and let him decide.
 - Anything on the do-not-build list goes into `docs/parked.md`. Say that you did it.
-- Before changing the math, open `test.html` in a browser and keep every line green. Add a check
-  for anything new.
+- Before changing the math, open `money/test.html` in a browser and keep every line green. Add a
+  check for anything new.
 - Commit and push only when he asks. Pushing to `main` updates the live app on his phone.

@@ -170,6 +170,55 @@
   eq('a new month needs a new pocket balance', getStatus(stale, D('2026-11-01')).due.pocket, true);
   eq('a balance from 8 days ago is stale', getStatus(stale, D('2026-10-31') + 8).due.pocket, true);
 
+  // --- This week's number: what Home leads with
+  let tw = thisWeek(getStatus(oct12(), D('2026-10-12')));
+  eq('Oct 12: 45 hrs this week, 3 behind, a normal week is 42, week 4 of 4', [tw.hours, tw.ahead, tw.normal, tw.number], [45, -3, 42, 4]);
+  const day1 = fresh(); check(day1, '2026-09-14', 62.97, 1427.36); week(day1, '2026-09-07', 36); week(day1, '2026-09-14', 32); pocket(day1, '2026-09-21', 125);
+  tw = thisWeek(getStatus(day1, D('2026-09-21')));
+  eq('first day of a stretch: this week = a normal week, nothing to be behind on', [tw.hours, tw.normal, tw.ahead, tw.number, tw.next, isoOf(tw.start)], [33, 33, 0, 1, false, '2026-09-21']);
+  tw = thisWeek(getStatus(sun, D('2026-10-18')));
+  eq('logged on Sunday: Home shows next week', [tw.next, isoOf(tw.start)], [true, '2026-10-19']);
+
+  // --- The week boxes and the transfer date
+  eq('Oct 12: the money is for the Oct 31 transfer', fmtDay(transferDay(getStatus(oct12(), D('2026-10-12')).activeWin)), 'Sat Oct 31');
+  eq('Sep 21: last month’s weeks go to the Sep 30 transfer', fmtDay(transferDay(getStatus(day1, D('2026-09-21')).lockedWin)), 'Wed Sep 30');
+  const strip = weekStrip(getStatus(oct12(), D('2026-10-12')));
+  eq('Oct 12 boxes: two weeks from the check (~39 each), 45 logged, this week needs 45',
+    strip.map(b => [b.kind, b.hours, !!b.approx]), [['done', 39, true], ['done', 39, true], ['done', 45, false], ['now', 45, false]]);
+  const strip1 = weekStrip(getStatus(day1, D('2026-09-21')));
+  eq('first day: this week plus three to come, 33 each', strip1.map(b => [b.kind, b.hours]), [['now', 33], ['next', 33], ['next', 33], ['next', 33]]);
+  const behind = day1; week(behind, '2026-09-21', 28); pocket(behind, '2026-09-28', 100);
+  const strip2 = weekStrip(getStatus(behind, D('2026-09-28')));
+  eq('a short week shows amber, the rest need more', strip2.map(b => [b.kind, b.hours, !!b.short]), [['done', 28, true], ['now', 35, false], ['next', 35, false], ['next', 35, false]]);
+
+  // --- Planning a week: the others adjust
+  const planned = () => { const s = fresh(); check(s, '2026-09-14', 62.97, 1427.36); week(s, '2026-09-07', 36); week(s, '2026-09-14', 32); pocket(s, '2026-09-21', 125); return s; };
+  let ps = planned(); setPlan(ps, '2026-10-05', 20);
+  let pst = getStatus(ps, D('2026-09-21'));
+  eq('plan Oct 5 at 20: the other three weeks need 38', weekStrip(pst).map(b => [b.hours, !!b.planned]), [[38, false], [38, false], [20, true], [38, false]]);
+  eq('plan Oct 5 at 20: this week shows 38', thisWeek(pst).hours, 38);
+  ps = planned(); setPlan(ps, '2026-09-21', 0);
+  eq('plan this week off: headline says 0, the rest need 44', [thisWeek(getStatus(ps, D('2026-09-21'))).hours, weekStrip(getStatus(ps, D('2026-09-21')))[1].hours], [0, 44]);
+  ps = planned(); ['2026-09-21', '2026-09-28', '2026-10-05', '2026-10-12'].forEach(w => setPlan(ps, w, 20));
+  eq('every week planned at 20: 53 hrs uncovered, not chillin', [Math.round(getStatus(ps, D('2026-09-21')).act.planShort), getStatus(ps, D('2026-09-21')).chillin], [53, false]);
+  ps = planned(); setPlan(ps, '2026-10-05', 20); setPlan(ps, '2026-10-05', null);
+  eq('clearing a plan puts it back', weekStrip(getStatus(ps, D('2026-09-21'))).map(b => b.hours), [33, 33, 33, 33]);
+
+  // --- Last month's transfer: quiet when the gap is small, gone once you've got it
+  pst = getStatus(planned(), D('2026-09-21'));
+  eq('Sep 30 transfer $53 short: stays quiet (under $100)', [Math.round(pst.lock.toGo), pst.lockFine], [53, true]);
+  const shortish = () => { const s = fresh(); check(s, '2026-09-14', 62.97, 1427.36); week(s, '2026-09-07', 25); week(s, '2026-09-14', 25); pocket(s, '2026-09-21', 125); return s; };
+  pst = getStatus(shortish(), D('2026-09-21'));
+  eq('Sep 30 transfer $461 short: speaks up', [Math.round(pst.lock.toGo), pst.lockFine], [461, false]);
+  const got = shortish(); got.gotIt = ['2026-09-30'];
+  eq('after "Got it": quiet for that transfer', getStatus(got, D('2026-09-21')).lockFine, true);
+
+  // --- The next paycheck, roughly
+  let nc = getStatus(planned(), D('2026-09-21')).nextCheck;
+  eq('next check Sep 28: about $1,541 from 68 logged hrs', [isoOf(nc.pay), Math.round(nc.amount)], ['2026-09-28', 1541]);
+  nc = getStatus(oct12(), D('2026-10-12')).nextCheck;
+  eq('next check Oct 26: 45 logged + 45 still needed ≈ $1,625', [isoOf(nc.pay), Math.round(nc.amount)], ['2026-10-26', 1625]);
+
   // --- Show results
   const bad = results.filter(x => !x.ok);
   document.getElementById('sum').className = bad.length ? 'bad' : 'ok';

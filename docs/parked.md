@@ -12,6 +12,21 @@ Rough order, most valuable first.
 
 ## Added 2026-09-21, while building v1
 
+### Built 2026-09-22 (after the first days of use)
+- The start screen with Money and +1 (was #10, the shell). One line each.
+- Tap a week to plan it (the start of #3). **Parked:** planning weeks in the *next* stretch, and
+  time off beyond it.
+- Next check estimate, as one line.
+
+### F. Buckets for extra money
+Seb wants to see extra money and choose buckets for it (reserves, #2). At $22.67/hr, a normal week is
+~33 hrs. His recent weeks average ~33, so there's no surplus yet. At 38.5 hrs/wk it'd be ~$500/month.
+**Decide after Oct 31**, once a real month shows whether there's money to divide.
+
+### G. +1's own parked list (from its IDEAS.md)
+History calendar · rest-day forest · friends syncing and comparing · custom exercise name ·
+slide-to-count. See `Pushup Tracker/IDEAS.md` for detail.
+
 ### A. Make pocket raids visible
 Pocket only gets topped up at month end, so a mid-month *increase* in the pocket balance means
 money was moved in from another card (gas, groceries). Right now that makes pocket look healthier

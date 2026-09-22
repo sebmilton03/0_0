@@ -2,43 +2,42 @@
 
 Read this at the start of every session. Short on purpose.
 
-**What it is.** A confidence instrument, not a budgeting app. Seb opens it, sees he's fine, puts the
-phone down and plays guitar. It answers one question: *will the checks landing this month fund next
-month?* It answers in hours, because hours are what he controls. It also shows pocket money, the
-only spending he actually decides about.
+**The idea.** The bank already does the budgeting. Bills come out automatically. Food and gas have
+their own cards with caps, and anything over goes to pocket or savings. So only two things need
+watching: **hours → paychecks**, and **pocket money**. Check-ins keep both accurate.
 
-**The math.**
-- A month is funded by the checks that land in the month before it. The work behind those checks is
-  the **window**: whole pay periods, Mon–Sun, 4 weeks most months and 6 weeks twice a year.
-- hours left = (month total − what the window has earned) ÷ $/hr. Per week = hours left ÷ weeks
-  left in the window.
-- A check that's in counts as paid. A week without one counts as logged hours × $/hr.
-- $/hr = net ÷ hours over the last 3 checks. Never typed in.
-- Everything is worked out fresh from saved events. No plan is stored, and there's no schedule to
-  fall behind on.
+**What 0_0 is.** A few tiny apps behind one icon. The start screen shows one line per app. Most
+days that line is the answer and you close it. Today it's Money and +1. Nothing new joins until the
+last thing has survived a real month of use.
 
-**Three home states.**
-1. **Something's due.** A finished week, a check that landed, or a stale pocket balance. It
-   doesn't guess; logging is the reveal.
-2. **Busy.** The numbers and the way back. Behind pace is amber. Red only when it's out of reach
-   (> 50 hrs/week).
-3. **Chillin.** Needs a fresh log, on pace, nothing unknown, and pocket at or above its daily
-   budget. The face is `-_-`, dimmed, with no button.
+**Money in one line:** how many hours to work this week, and whether you're ahead or behind.
+- Next month's bills get paid by the checks that land this month. The weeks behind those checks are
+  the stretch: 4 weeks, or 6 twice a year. The pay lag lives in the math, never on the screen.
+- This week = hours still needed ÷ weeks left. After a short week, the rest go up a little. There's
+  no schedule to fall behind on.
+- Tap a week to plan it. The others adjust.
+- Paydays: the same card every time, with two numbers off the stub (take-home and hours). $/hr is
+  the average of the last 3 checks.
 
-**Rules.**
-1. Optimize for the session ending. When he's fine, show less.
-2. Busy is a to-do list with the way out drawn, never an alarm.
-3. Cut inputs. Manual entry stays manual, because typing it *is* checking it. No bank sync. Nothing
-   pre-filled.
-4. Must survive being ignored: no streaks, no guilt. Skipped weeks get filled in by their check.
-5. Nothing new gets built until the thing before it has survived one real cycle (a month).
-   Modules stay frozen at `money` + `plusone` (+1 is its own repo) until Seb says otherwise.
-6. New ideas go in `docs/parked.md`, not the code.
-7. Colour: green = good, amber = tight/behind, red = out of reach. Nothing else gets colour.
-8. No personal numbers in the code. The repo is public, and setup collects everything on the phone.
-9. One file per module (`money.js`) until it physically hurts. `test.html` must stay all green.
+**Check-ins.** Sunday: hours and pocket balance. Payday: the stub. That's all. Nothing is
+pre-filled, because typing it is checking it. No bank sync.
 
-**Where things are.** The full briefing, Seb's own words and the decisions are in `../0_0-handoff/`
-(local only, not in the repo). The live app is https://sebmilton03.github.io/0_0/ and +1 is at
-https://sebmilton03.github.io/-1/. They share a site, so storage keys and cache names must never
-collide.
+**Quiet by default.**
+- Chillin needs a fresh check-in, being on track, and pocket OK. Then there's no button, and the face
+  becomes `-_-`.
+- If it needs no action, it isn't on screen. Gaps under $100 stay silent. Anything shown can be
+  dismissed.
+- No comparisons, streaks, scores or extra lines "for trust." Being right is what builds trust.
+- Colour: green = good, amber = behind or tight, red = out of reach. Nothing else.
+
+**Build rules.**
+- Simple beats clever. If a screen needs explaining, the screen is wrong. The pay lag taught us that.
+- One file per app until it hurts: `money/money.js`, `plusone/index.html`. `money/test.html` stays
+  all green.
+- New ideas go in `docs/parked.md`, not the code.
+- No personal numbers in the code. The repo is public, so setup collects them on the phone.
+- Commit and push only when Seb says.
+
+**Where things are.** The live app is https://sebmilton03.github.io/0_0/ (start screen). Money is at
+`money/` and +1 at `plusone/`. The old copy of +1 at `/-1/` shares the same data. The full history
+is in `../0_0-handoff/` (local only).

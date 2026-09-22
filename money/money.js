@@ -7,6 +7,7 @@
 const KEY = '0_0-money-v1';  // +1 lives on the same site (sebmilton03.github.io), so keys must not collide
 const MAX_WEEK = 50;         // more hours a week than this is out of reach: red, and say so
 const RATE_CHECKS = 3;       // $/hr is the average of your latest checks, so a raise shows up fast
+const SHORT_OK = 100;        // a gap this small is inside the estimate, and your buffer has it: stay quiet
 
 /* ---------- Dates ----------
    Days are whole numbers (days since 1970), same as +1. Nothing uses clock times, so daylight
@@ -88,7 +89,8 @@ function windowAt(sch, t) {
    { id, type, start, end, label, ref, value }, so a calendar later is a view, not a rewrite.
      hours:  a week of work, value = hours (null = "don't know, the check will fill it in")
      check:  a paycheck, value = net pay, plus `hours` off the stub; start/end = the period it paid
-     pocket: the pocket card balance on a day */
+     pocket: the pocket card balance on a day
+     plan:   hours you plan to work in a week still to come; the other weeks adjust */
 function load() {
   try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; }
 }
@@ -99,13 +101,14 @@ const newId = () => Date.now().toString(36) + Math.random().toString(36).slice(2
 
 const eventsOf = (s, type) => s.events.filter(e => e.type === type).sort((a, b) => dayOf(a.start) - dayOf(b.start));
 function lookup(s) {
-  const hours = new Map(), checks = new Map();
+  const hours = new Map(), checks = new Map(), plans = new Map();
   for (const e of s.events) {
     if (e.type === 'hours') hours.set(dayOf(e.start), e);
     if (e.type === 'check') checks.set(dayOf(e.start), e);
+    if (e.type === 'plan') plans.set(dayOf(e.start), e);
   }
   const pockets = eventsOf(s, 'pocket');
-  return { hours, checks, pocket: pockets[pockets.length - 1] || null };
+  return { hours, checks, plans, pocket: pockets[pockets.length - 1] || null };
 }
 function recentChecks(s) { return eventsOf(s, 'check').filter(c => c.hours > 0).slice(-RATE_CHECKS); }
 function hourlyRate(s) {
@@ -139,7 +142,15 @@ function tally(w, look, rate, target, ref) {
   t.toGo = Math.max(0, target - t.known);
   t.weeksLeft = t.total - t.done;
   t.hoursLeft = t.toGo / rate;
-  t.perWeek = t.weeksLeft ? t.hoursLeft / t.weeksLeft : 0;
+  // Weeks you've planned keep their hours. The rest share what's left.
+  let planned = 0, plannedN = 0;
+  for (const wk of w.weeks) {
+    const pl = wk.end >= ref && look.plans.get(wk.start);
+    if (pl) { planned += pl.value; plannedN++; }
+  }
+  const flexN = t.weeksLeft - plannedN;
+  t.perWeek = flexN ? Math.max(0, t.hoursLeft - planned) / flexN : 0;
+  t.planShort = flexN ? 0 : Math.max(0, t.hoursLeft - planned);   // every week planned, and it doesn't add up
   t.lastPay = w.periods[w.periods.length - 1].pay;
   t.estimate = w.periods.some(p => !look.checks.get(p.start));
   return t;
@@ -192,18 +203,36 @@ function getStatus(s, now = today()) {
     pocket = { balance: pk.value, daysLeft, perDay, budget, fine: perDay >= budget - 0.005, asOf: d };
   }
 
+  // Last month's transfer only speaks up when it's really short, and only until you say you've got it.
+  const lockDay = lockedWin && transferDay(lockedWin);
+  const lockFine = !lock || lock.covered || (s.gotIt || []).includes(isoOf(lockDay))
+    || (lock.toGo <= SHORT_OK && !lock.unknown.length);
+
   // Silence has to be earned: fresh data, on pace, nothing unknown, pocket fine.
   const chillin = !anyDue && !!act
-    && (act.covered || act.ahead >= -0.5) && !act.unknown.length
-    && (!lock || (lock.covered && !lock.unknown.length))
+    && (act.covered || act.ahead >= -0.5) && !act.unknown.length && !act.planShort
+    && lockFine
     && !!pocket && pocket.fine;
+
+  // The next paycheck, roughly: hours logged, then planned or needed hours for weeks still to come.
+  let nextCheck = null;
+  if (rate) {
+    const pay = sch.nextPay(now), per = sch.periodAt(pay - sch.lag);
+    let amount = 0;
+    for (let d = per.start; d <= per.end; d += 7) {
+      const h = look.hours.get(d), pl = look.plans.get(d);
+      if (d + 6 < ref) amount += h && h.value != null ? h.value * rate : 0;
+      else amount += (pl ? pl.value : act ? act.perWeek : 0) * rate;
+    }
+    nextCheck = { pay, amount };
+  }
 
   // When the app next needs you: the end of this week or the next payday, whichever comes first.
   const weekEnd = ref > cur.end ? cur.end + 7 : cur.end;
   const nextPay = sch.nextPay(now);
   const next = nextPay < weekEnd ? { day: nextPay, check: true } : { day: weekEnd, check: false };
 
-  return { now, ref, rate, target, due, anyDue, activeWin, lockedWin, act, lock, pocket, chillin, next, sch };
+  return { now, ref, rate, target, due, anyDue, activeWin, lockedWin, act, lock, lockFine, lockDay, pocket, chillin, next, nextCheck, sch, look };
 }
 
 /* ---------- Screens ---------- */
@@ -213,7 +242,7 @@ const GEAR = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke
 const CLOSE = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg>';
 const BACK = '<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 6l-6 6l6 6"/></svg>';
 
-const topBar = (face, dim) => '<div class="top' + (dim ? ' dim' : '') + '"><span class="mark">' + face + '</span>' +
+const topBar = (face, dim) => '<div class="top' + (dim ? ' dim' : '') + '"><a class="mark" href="../" aria-label="All apps">' + face + '</a>' +
   '<button class="icon" data-go="settings" aria-label="Settings">' + GEAR + '</button></div>';
 
 let state = null;
@@ -236,8 +265,8 @@ function revealHTML(s) {
     const wk = d.weeks[0];
     const closed = s.lockedWin && wk.end === s.lockedWin.end;
     title = 'How’d last<br>week go?';
-    text = (closed ? MONTHS[s.lockedWin.funds] + '’s window closed ' + WEEKDAYS[partsOf(wk.end).wd] + '.<br>Log it to see where ' + MONTHS[s.lockedWin.funds] + ' landed,<br>and whether you’re chillin.'
-      : 'Log it to see whether you’re chillin.');
+    text = closed ? 'That was the last week for your<br>' + fmtMD(transferDay(s.lockedWin)) + ' transfer. Log it to see where it landed,<br>and whether you’re chillin.'
+      : 'Log it to see whether you’re chillin.';
   } else if (n > 1) {
     title = 'Catch me up';
     text = plural(n, 'week') + ' to log. Put in what you’ve got.<br>A week you don’t know gets filled in<br>when its check lands.';
@@ -251,72 +280,99 @@ function revealHTML(s) {
   const last = state.lastLine
     ? '<div class="card c" style="margin-top:30px"><p class="hint" style="margin:0">Last update · ' + fmtDay(dayOf(state.lastLine.day)) + '</p><p style="margin-top:4px;font-size:16px">' + esc(state.lastLine.text) + '</p></div>'
     : '';
-  const one = n === 1 && !d.checks.length ? ' ' + fmtRange(d.weeks[0].start, d.weeks[0].end) : '';
+  const btn = n === 1 && !d.checks.length ? 'Log ' + fmtRange(d.weeks[0].start, d.weeks[0].end)
+    : !n && d.checks.length ? 'Enter your paycheck' : 'Log';
   return topBar('0_0') + '<div class="spacer"></div><div class="say"><h1>' + title + '</h1><p>' + text + '</p></div>' + last +
-    '<div class="spacer"></div><button class="btn" data-go="log">Log' + one + '</button>';
+    '<div class="spacer"></div><button class="btn" data-go="log">' + btn + '</button>';
 }
 
-// Nothing to do. Less on screen, not more: no button, no numbers, no praise.
+// Nothing to do. Less on screen, not more: no button, no praise.
 function chillinHTML(s) {
-  const A = MONTHS[s.activeWin.funds];
-  const hours = s.lock ? MONTHS[s.lockedWin.funds] + '’s covered, ' + A + '’s on track.'
-    : s.act.covered ? A + '’s covered.' : A + '’s on track.';
   const p = s.pocket;
   remember('You were chillin');
   return topBar('-_-', true) + '<div class="spacer"></div><div class="say chill" data-swipe>' +
-    '<h1>You’re<br>chillin</h1><p>' + hours + '<br>Pocket’s got ' + money(p.balance) + ' for ' + plural(p.daysLeft, 'day') + '.</p></div>' +
+    '<h1>You’re<br>chillin</h1><p>' + (s.act.covered ? MONTHS[s.activeWin.funds] + '’s money is covered.' : 'Hours are on track.') +
+    '<br>Pocket’s got ' + money(p.balance) + ' for ' + plural(p.daysLeft, 'day') + '.</p></div>' +
     '<div class="spacer"></div><button class="foot" data-go="log">' + fmtDay(s.now) + ' · next: ' +
     (s.next.check ? 'your check, ' + fmtDay(s.next.day) : fmtDay(s.next.day)) + '</button>';
 }
 
-// Something to do: the numbers, and the way back to on track.
+// This week's number, and how you're doing against the stretch spread out evenly.
+function thisWeek(s) {
+  const a = s.act, wk = s.sch.weekAt(s.ref);
+  return {
+    start: wk.start, end: wk.end, next: wk.start > s.now, number: a.done + 1,
+    hours: Math.round(s.look.plans.has(wk.start) && wk.end >= s.ref ? s.look.plans.get(wk.start).value : a.perWeek),
+    planned: s.look.plans.has(wk.start) && wk.end >= s.ref,
+    normal: Math.round(a.target / s.rate / a.total),
+    ahead: a.done ? Math.round(a.ahead / s.rate) : 0,   // in hours; nothing to be ahead of in week 1
+  };
+}
+
+// The day you move money into the cards: the last day of the month the checks land in.
+const fmtMD = d => { const p = partsOf(d); return short(MONTHS[p.m]) + ' ' + p.date; };   // Oct 31
+function transferDay(win) { const p = partsOf(win.periods[0].pay); return monthEnd(p.y, p.m); }
+
+// One box per week whose pay goes into the next transfer: what you worked, or what each week still needs.
+function weekStrip(s) {
+  const a = s.act, normal = a.target / s.rate / a.total, need = Math.round(a.perWeek);
+  return s.activeWin.weeks.map(wk => {
+    if (wk.end < s.ref) {
+      const h = s.look.hours.get(wk.start), c = s.look.checks.get(s.sch.periodAt(wk.start).start);
+      const logged = h && h.value != null;
+      const hrs = logged ? h.value : c ? c.hours / (s.sch.every / 7) : null;   // a check alone: split evenly
+      return { start: wk.start, kind: 'done', hours: hrs == null ? null : Math.round(hrs), approx: !logged && hrs != null, short: hrs != null && hrs < normal - 0.5 };
+    }
+    const pl = s.look.plans.get(wk.start);
+    return { start: wk.start, kind: wk.start <= s.ref ? 'now' : 'next', hours: pl ? Math.round(pl.value) : need, planned: !!pl };
+  });
+}
+
+// Something to do: this week's hours, your weeks at a glance, and what that means for the transfer.
 function busyHTML(s) {
-  const a = s.act, A = MONTHS[s.activeWin.funds];
+  const a = s.act, w = thisWeek(s), T = fmtMD(transferDay(s.activeWin));
   const red = !a.covered && a.perWeek > MAX_WEEK;
-  const lastWeek = a.weeksLeft === 1;
   let hero;
   if (a.covered) {
-    hero = '<div class="label">Funding ' + A + '</div><div class="big word"><b class="green">Covered</b></div>' +
+    hero = '<div class="label">Your ' + T + ' transfer</div><div class="big word"><b class="green">Covered</b></div>' +
       '<p class="sub">every hour now is extra</p>';
-    remember(A + ' was covered');
+    remember('Your ' + T + ' transfer was covered');
   } else {
-    const h = Math.round(a.hoursLeft);
-    hero = '<div class="label">Funding ' + A + ' · ' + (lastWeek ? 'last week' : a.weeksLeft + ' weeks left') + '</div>' +
-      '<div class="big"><b' + (red ? ' class="red"' : '') + '>' + h + '</b><span>hrs</span></div>' +
-      '<p class="sub">' + (lastWeek ? 'this week · <b>by ' + fmtDay(s.activeWin.end) + '</b>' : 'left · <b>about ' + Math.round(a.perWeek) + ' a week</b>') + '</p>';
-    remember(lastWeek ? h + ' hrs to go that week' : h + ' hrs left, about ' + Math.round(a.perWeek) + ' a week');
+    const how = !w.ahead ? 'on track'
+      : w.ahead > 0 ? '<span class="green">' + plural(w.ahead, 'hr') + ' ahead</span>'
+      : '<span class="' + (red ? 'red' : 'amber') + '">' + plural(-w.ahead, 'hr') + ' behind</span>';
+    hero = '<div class="label">' + (w.next ? 'Next week' : 'This week') + ' · ' + fmtRange(w.start, w.end) + '</div>' +
+      '<div class="big"><b' + (red ? ' class="red"' : '') + '>' + w.hours + '</b><span>hrs</span></div>' +
+      '<p class="sub">' + how + (w.ahead ? ' · normally ' + w.normal : '') + '</p>';
+    remember(w.hours + ' hrs that week, ' + (w.ahead > 0 ? w.ahead + ' ahead' : w.ahead < 0 ? -w.ahead + ' behind' : 'on track'));
   }
 
-  const pct = x => Math.max(0, Math.min(100, x / a.target * 100));
-  const bar = '<div class="bar"><i class="paid" style="width:' + pct(a.paid) + '%"></i>' +
-    '<i class="logged" style="left:' + pct(a.paid) + '%;width:' + (pct(a.known) - pct(a.paid)) + '%"></i>' +
-    (a.done && !a.covered ? '<i class="tick" style="left:' + pct(a.pace) + '%"></i>' : '') + '</div>';
-  const ahead = Math.round(a.ahead);
-  const paceL = a.covered ? '<span class="green">' + money(a.known - a.target) + ' extra</span>'
-    : ahead > 0 ? '<span class="green">' + money(ahead) + ' ahead of pace</span>'
-    : ahead === 0 ? '<span>on pace</span>'
-    : '<span class="' + (red ? 'red' : 'amber') + '">' + money(-ahead) + ' behind pace</span>';
-  const legend = [a.paid ? '<span><i style="background:var(--green)"></i>paid ' + money(a.paid) + '</span>' : '',
-    a.logged ? '<span><i style="background:var(--green-faint)"></i>logged ' + money(a.logged) + '</span>' : ''].join('');
+  // Past weeks show what you worked (amber if under a normal week). The rest show what each needs.
+  const strip = '<div class="weeks">' + weekStrip(s).map(b => {
+    const d = partsOf(b.start);
+    const num = b.hours == null ? '–' : (b.approx ? '~' : '') + b.hours;
+    const inner = '<span>' + short(MONTHS[d.m]) + ' ' + d.date + '</span><b>' + num + '</b>';
+    if (b.kind === 'done') return '<div class="wk done' + (b.short ? ' short' : ' ok') + '">' + inner + '</div>';
+    return '<button class="wk ' + b.kind + (b.planned ? ' planned' : '') + '" data-act="plan" data-w="' + isoOf(b.start) + '">' + inner + '</button>';
+  }).join('') + '</div>';
 
   const notes = [];
-  if (red) notes.push('Even at ' + MAX_WEEK + ' a week you’d be about ' + money(a.toGo - MAX_WEEK * a.weeksLeft * s.rate) + ' short. Plan to cover that at month end.');
-  else if (lastWeek && !a.covered) notes.push('After ' + fmtDay(s.activeWin.end) + ', ' + A + '’s locked in.');
+  if (s.nextCheck) notes.push('Next check ' + fmtDay(s.nextCheck.pay) + ': about ' + money(s.nextCheck.amount));
+  notes.push('Tap a week to plan it. These weeks pay for your ' + T + ' transfer.');
+  if (a.planShort) notes.push('<span class="amber">Your plan leaves ' + plural(Math.round(a.planShort), 'hr') + ' uncovered.</span> Raise a week or clear a plan.');
+  if (red) notes.push('Even at ' + MAX_WEEK + ' a week you’d be about ' + money(a.toGo - MAX_WEEK * a.weeksLeft * s.rate) + ' short. Plan to cover that from savings.');
+  else if (a.weeksLeft === 1 && !a.covered) notes.push('Last week for the ' + T + ' transfer.');
   if (a.unknown.length) notes.push(plural(a.unknown.length, 'week') + ' unknown until your ' + fmtDay(a.waitingOn[0]) + ' check.');
-  if (s.lock) {
-    const L = MONTHS[s.lockedWin.funds], l = s.lock;
-    const confirmNote = l.estimate ? ' · estimate until your ' + fmtDay(l.lastPay) + ' check' : '';
-    if (l.unknown.length) notes.push(L + ': ' + plural(l.unknown.length, 'week') + ' unknown until your ' + fmtDay(l.waitingOn[0]) + ' check.');
-    else if (l.covered) notes.push('<span class="green">' + L + '’s covered</span>' + confirmNote);
-    else notes.push('<span class="amber">' + L + ': about ' + money(l.toGo) + ' short</span>, cover it at month end' + confirmNote);
+  if (s.lock && !s.lockFine) {
+    const L = fmtMD(s.lockDay), l = s.lock;
+    if (l.unknown.length) notes.push(L + ' transfer: ' + plural(l.unknown.length, 'week') + ' unknown until your ' + fmtDay(l.waitingOn[0]) + ' check.');
+    else notes.push('<span class="amber">' + L + ' transfer: about ' + money(l.toGo) + ' short.</span> <button class="link inline" data-act="gotIt" data-t="' + isoOf(s.lockDay) + '">Got it</button>');
   }
 
   const p = s.pocket;
   const asOf = state.lastLog && dayOf(state.lastLog) !== s.now ? '<p class="asof">as of ' + fmtDay(dayOf(state.lastLog)) + '</p>' : '';
-  return topBar('0_0') + '<div class="hero">' + hero + '</div>' + bar +
-    '<div class="barl">' + paceL + (a.covered ? '' : '<span>' + money(a.toGo) + ' to go</span>') + '</div>' +
-    (legend ? '<div class="legend">' + legend + '</div>' : '') +
-    (notes.length ? '<div class="notes">' + notes.map(n => '<p>' + n + '</p>').join('') + '</div>' : '') +
+  return topBar('0_0') + '<div class="hero">' + hero + '</div>' + strip +
+    '<div class="notes">' + notes.map(n => '<p>' + n + '</p>').join('') + '</div>' +
     '<hr><div class="label c">Pocket</div><div class="pocket' + (p.fine ? '' : ' amber') + '">' + money(p.balance) + '</div>' +
     '<p class="sub">' + plural(p.daysLeft, 'day') + ' · <b>' + cents(p.perDay) + ' a day</b></p>' + asOf +
     '<div class="spacer"></div><button class="btn" data-go="log">Log</button>';
@@ -343,27 +399,33 @@ function weekRow(wk, title, saved, canSkip) {
     '<span class="r" data-est>hrs</span></label>' +
     (canSkip ? '<button class="link" data-act="unknown">' + (unknown ? 'I know it now' : 'Don’t know? Its check will fill it in') + '</button>' : '') + '</div>';
 }
-function checkRow(p, saved, look) {
-  let logged = 0, any = false;
-  for (let d = p.start; d <= p.end; d += 7) { const h = look.hours.get(d); if (h && h.value != null) { logged += h.value; any = true; } }
-  return '<div class="sec" data-check="' + isoOf(p.start) + '" data-end="' + isoOf(p.end) + '" data-pay="' + isoOf(p.pay) + '" data-logged="' + (any ? logged : '') + '">' +
-    '<span class="label">' + fmtDay(p.pay) + ' check · pays ' + fmtRange(p.start, p.end) + '</span>' +
-    '<div class="pair"><label class="field"><span class="pre">$</span><input data-k="net" inputmode="decimal" autocomplete="off" placeholder="net" value="' + (saved ? saved.value : '') + '"></label>' +
-    '<label class="field"><input data-k="hours" inputmode="decimal" autocomplete="off" placeholder="0" value="' + (saved ? saved.hours : '') + '"><span class="r">hrs</span></label></div>' +
-    '<p class="hint" data-match>' + (saved ? '' : 'Off your stub. Take-home pay, not before tax.') + '</p></div>';
+function checkRow(p, saved) {
+  return '<div class="sec" data-check="' + isoOf(p.start) + '" data-end="' + isoOf(p.end) + '" data-pay="' + isoOf(p.pay) + '">' +
+    '<span class="label">Paycheck · ' + fmtDay(p.pay) + '</span>' +
+    '<p class="hint" style="margin:-4px 0 10px">For work ' + fmtRange(p.start, p.end) + '. Copy these two off your stub.</p>' +
+    '<div class="pair"><label class="field stack"><small>Take-home pay</small><span class="in"><span class="pre">$</span><input data-k="net" inputmode="decimal" autocomplete="off" placeholder="0" value="' + (saved ? saved.value : '') + '"></span></label>' +
+    '<label class="field stack"><small>Hours</small><span class="in"><input data-k="hours" inputmode="decimal" autocomplete="off" placeholder="0" value="' + (saved ? saved.hours : '') + '"></span></label></div></div>';
 }
 
 function renderLog() {
   const s = getStatus(state), look = lookup(state);
   let rows = '';
-  if (logMode === 'due') {
-    for (const p of s.due.checks) rows += checkRow(p, null, look);
+  if (logMode === 'setup') {
+    // Straight after setup: the weeks between the stub and today, explained. Pocket was just asked.
+    const stub = eventsOf(state, 'check').slice(-1)[0];
+    rows = '<h2 style="margin-top:22px;font-size:30px">Since that stub</h2><p class="intro">Your ' + fmtDay(dayOf(stub.end) + s.sch.lag) +
+      ' check paid for work through ' + fmtDay(dayOf(stub.end)) + '. Put in the hours you worked each week since. They’re on your shift printouts.' +
+      (s.due.checks.length ? ' A newer check has landed too, so put that in as well.' : '') + '</p>';
+    for (const p of s.due.checks) rows += checkRow(p, null);
+    s.due.weeks.forEach(wk => { rows += weekRow(wk, 'Week', null, true); });
+  } else if (logMode === 'due') {
+    for (const p of s.due.checks) rows += checkRow(p, null);
     s.due.weeks.forEach(wk => { rows += weekRow(wk, s.due.weeks.length > 1 ? 'Week' : 'Last week', null, true); });
     const cur = s.sch.weekAt(s.now);
     if (cur.end === s.now && !look.hours.has(cur.start)) rows += weekRow(cur, 'This week', null, false);
     if (!rows) rows = '<p class="done-all">Weeks and checks are all in.</p>';
     const last = look.pocket, np = partsOf(s.now);
-    rows += '<div class="sec" data-pocket><span class="label">Pocket card</span><label class="field"><span class="pre">$</span>' +
+    rows += '<div class="sec" data-pocket><span class="label">Pocket card' + (s.due.pocket ? '' : ' · optional') + '</span><label class="field"><span class="pre">$</span>' +
       '<input data-k="pocket" inputmode="decimal" autocomplete="off" placeholder="0">' +
       '<span class="r">' + plural(monthEnd(np.y, np.m) - s.now + 1, 'day') + ' left</span></label>' +
       (last ? '<p class="hint">Last time: ' + money(last.value) + ' on ' + fmtDay(dayOf(last.start)) + '. Read it off your bank app.</p>' : '') + '</div>' +
@@ -377,31 +439,26 @@ function renderLog() {
     weeks.forEach(wk => { rows += weekRow(wk, 'Week', look.hours.get(wk.start), true); });
     eventsOf(state, 'check').slice(-4).reverse().forEach(c => {
       const p = s.sch.periodAt(dayOf(c.start));
-      rows += checkRow(p, c, look);
+      rows += checkRow(p, c);
     });
     rows += '<p class="hint" style="margin-top:18px">Clear a box to delete what’s there.</p>' +
       '<button class="link" data-act="due">‹ Back to what’s due</button>';
   }
-  $('log').innerHTML = '<div class="head"><button class="icon" data-go="home" aria-label="Close">' + CLOSE + '</button><h2>' + fmtLong(s.now) + '</h2></div>' +
-    rows + '<p class="err" id="logMsg" hidden></p><div class="spacer"></div><button class="btn" data-act="saveLog">Done</button>';
+  const head = logMode === 'setup' ? '<div class="top"><div class="steps"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></div></div>'
+    : '<div class="head"><button class="icon" data-go="home" aria-label="Close">' + CLOSE + '</button><h2>' + fmtLong(s.now) + '</h2></div>';
+  $('log').innerHTML = head + rows + '<p class="err" id="logMsg" hidden></p><div class="spacer"></div><button class="btn" data-act="saveLog">' + (logMode === 'setup' ? 'Finish' : 'Done') + '</button>';
   confirmWarn = false;
   refreshLogHints();
 }
 
 function num(v) { const n = parseFloat(String(v).replace(/[$,\s]/g, '')); return Number.isFinite(n) ? n : NaN; }
 
-// Live feedback while typing: what the hours are worth, and whether the stub matches your log.
+// Live feedback while typing: what the hours are worth.
 function refreshLogHints() {
   const rate = hourlyRate(state);
   document.querySelectorAll('#log [data-week]').forEach(row => {
     const h = num(row.querySelector('input').value), est = row.querySelector('[data-est]');
     est.textContent = row.dataset.unknown ? 'check fills it' : h > 0 && rate ? 'hrs ≈ ' + money(h * rate) : 'hrs';
-  });
-  document.querySelectorAll('#log [data-check]').forEach(row => {
-    const hrs = num(row.querySelector('[data-k="hours"]').value), logged = row.dataset.logged, m = row.querySelector('[data-match]');
-    if (!(hrs > 0) || logged === '') return;
-    m.className = 'hint' + (Math.abs(hrs - +logged) < 0.01 ? ' green' : '');
-    m.textContent = Math.abs(hrs - +logged) < 0.01 ? '✓ Matches the ' + logged + ' hrs you logged.' : 'You logged ' + logged + ' hrs for those weeks. The stub wins.';
   });
 }
 
@@ -454,6 +511,34 @@ function saveLog() {
   $('home').classList.remove('reveal'); void $('home').offsetWidth; $('home').classList.add('reveal');
   buzz(s.chillin ? [30, 60, 30] : 15);
 }
+
+// Plan a week still to come (or clear it with null). Works on any saved-data object, so the sheet can preview.
+function setPlan(s, startIso, value) {
+  s.events = s.events.filter(x => !(x.type === 'plan' && x.start === startIso));
+  if (value != null) s.events.push({ id: newId(), type: 'plan', start: startIso, end: isoOf(dayOf(startIso) + 6), label: 'Plan', ref: 'job', value });
+}
+function openPlan(iso) {
+  const s = getStatus(state), wk = s.activeWin.weeks.find(w => isoOf(w.start) === iso), cur = s.look.plans.get(wk.start);
+  const el = document.createElement('div');
+  el.className = 'sheet'; el.id = 'planSheet'; el.dataset.w = iso;
+  el.innerHTML = '<div class="panel"><span class="label">Plan · ' + fmtRange(wk.start, wk.end) + '</span>' +
+    '<label class="field" style="margin-top:12px"><input id="planIn" inputmode="decimal" autocomplete="off" placeholder="' + Math.round(s.act.perWeek) + '" value="' + (cur ? cur.value : '') + '"><span class="r">hrs</span></label>' +
+    '<p class="hint" id="planPrev">How many hours you think you’ll work. The other weeks adjust.</p>' +
+    '<p class="err" id="planErr" hidden></p>' +
+    '<div class="acts" style="margin-top:16px"><button class="ghost" data-act="planClear">' + (cur ? 'Clear plan' : 'Cancel') + '</button><button class="btn" data-act="planSave">Save</button></div></div>';
+  document.body.appendChild(el);
+  $('planIn').focus();
+}
+function previewPlan() {
+  const el = $('planSheet'), v = num($('planIn').value);
+  if (Number.isNaN(v) || v < 0) { $('planPrev').textContent = 'How many hours you think you’ll work. The other weeks adjust.'; return; }
+  const tmp = JSON.parse(JSON.stringify(state));
+  setPlan(tmp, el.dataset.w, v);
+  const a = getStatus(tmp).act;
+  $('planPrev').textContent = a.planShort ? 'That leaves ' + plural(Math.round(a.planShort), 'hr') + ' uncovered.'
+    : a.perWeek ? 'Then the other weeks need about ' + Math.round(a.perWeek) + ' each.' : 'That covers it.';
+}
+function closePlan() { const el = $('planSheet'); if (el) el.remove(); }
 
 function upsertHours(startIso, value) {
   const e = state.events.find(x => x.type === 'hours' && x.start === startIso);
@@ -560,7 +645,7 @@ let setup = { step: 0, bills: [{ label: '', amount: '' }, { label: '', amount: '
 const STEPS = 4;
 
 function renderSetup() {
-  const st = setup, dots = '<div class="steps">' + [1, 2, 3].map(i => '<i class="' + (i <= st.step ? 'on' : '') + '"></i>').join('') + '</div>';
+  const st = setup, dots = '<div class="steps">' + [1, 2, 3, 4].map(i => '<i class="' + (i <= st.step ? 'on' : '') + '"></i>').join('') + '</div>';
   let body;
   if (st.step === 0) {
     body = '<div class="top"><span class="mark">0_0</span></div><div class="spacer"></div>' +
@@ -580,12 +665,12 @@ function renderSetup() {
       '<p class="hint">Read it off your bank app.</p></div>';
   } else {
     body = '<div class="top">' + dots + '</div><h2 style="margin-top:22px;font-size:30px">Your latest pay stub</h2>' +
-      '<p class="intro">Your paydays and your take-home rate get worked out from this. Nothing else to set.</p>' +
+      '<p class="intro">Just the latest one. Your paydays and take-home rate get worked out from it.</p>' +
       stubForm(st.pay, st.start, st.end) +
       '<p class="hint" id="payWords"></p>' +
-      '<div class="pair" style="margin-top:14px"><label class="field"><span class="pre">$</span><input data-k="net" inputmode="decimal" value="' + esc(st.net) + '" placeholder="net"></label>' +
-      '<label class="field"><input data-k="hours" inputmode="decimal" value="' + esc(st.hours) + '" placeholder="0"><span class="r">hrs</span></label></div>' +
-      '<p class="hint">Take-home pay (net), not before tax.</p>';
+      '<div class="pair" style="margin-top:14px"><label class="field stack"><small>Take-home pay</small><span class="in"><span class="pre">$</span><input data-k="net" inputmode="decimal" value="' + esc(st.net) + '" placeholder="0"></span></label>' +
+      '<label class="field stack"><small>Hours</small><span class="in"><input data-k="hours" inputmode="decimal" value="' + esc(st.hours) + '" placeholder="0"></span></label></div>' +
+      '<p class="hint">Take-home is what landed in your account, not the before-tax number.</p>';
   }
   const nav = st.step === 0 ? '' : '<p class="err" id="setupErr" hidden></p><div class="spacer"></div><div class="acts"><button class="ghost" data-act="back">Back</button><button class="btn" data-act="next">' + (st.step === STEPS - 1 ? 'Finish' : 'Next') + '</button></div>';
   $('setup').innerHTML = body + nav;
@@ -625,7 +710,7 @@ function setupNext() {
     history.replaceState(null, '');
     const s = getStatus(state);
     show('home'); renderHome();
-    if (s.due.checks.length || s.due.weeks.length) go('log');
+    if (s.due.checks.length || s.due.weeks.length) { history.pushState({ page: 'log' }, ''); logMode = 'setup'; openScreen('log'); }
     return;
   }
   setup.step++;
@@ -672,6 +757,14 @@ function start() {
     if (b.dataset.go) return go(b.dataset.go);
     const act = b.dataset.act;
     if (act === 'saveLog') saveLog();
+    if (act === 'plan') openPlan(b.dataset.w);
+    if (act === 'planClear') { const el = $('planSheet'); if (state.events.some(x => x.type === 'plan' && x.start === el.dataset.w)) { setPlan(state, el.dataset.w, null); save(); } closePlan(); renderHome(); }
+    if (act === 'planSave') {
+      const v = num($('planIn').value);
+      if (Number.isNaN(v) || v < 0 || v > 100) { $('planErr').textContent = 'Put in the hours, 0 to 100.'; $('planErr').hidden = false; return; }
+      setPlan(state, $('planSheet').dataset.w, v); save(); closePlan(); renderHome(); buzz(10);
+    }
+    if (act === 'gotIt') { state.gotIt = (state.gotIt || []).concat(b.dataset.t); save(); renderHome(); }
     if (act === 'earlier' || act === 'due') { logMode = act; renderLog(); }
     if (act === 'unknown') {
       const row = b.closest('[data-week]');
@@ -702,7 +795,9 @@ function start() {
     if (act === 'import') $('importFile').click();
   });
 
+  document.addEventListener('click', e => { if (e.target.id === 'planSheet') closePlan(); });
   document.addEventListener('input', e => {
+    if (e.target.id === 'planIn') return previewPlan();
     if (!$('log').hidden) { confirmWarn = false; refreshLogHints(); }
     if (!$('setup').hidden && setup.step === 3) refreshPayWords();
     if (!$('setup').hidden && setup.step === 1) {
@@ -730,7 +825,7 @@ function start() {
   setInterval(() => { if (state && !$('home').hidden && today() !== shown) { shown = today(); renderHome(); } }, 60000);
   document.addEventListener('visibilitychange', () => { if (state && !document.hidden && !$('home').hidden) renderHome(); });
 
-  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+  if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('../sw.js').catch(() => {});
 }
 
 if (typeof document !== 'undefined' && document.getElementById('app')) start();
