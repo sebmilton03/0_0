@@ -18,6 +18,20 @@ Rough order, most valuable first.
   time off beyond it.
 - Next check estimate, as one line.
 
+### Built 2026-09-23 (evening)
+- **Study**: 20 hrs a week, fresh each Monday, the long purple squiggle, start/done, add time by hand.
+  Seb picked the squiggle over the column and asked for purple — noted that per-app colour is the
+  thing that breaks around app four; revisit if the suite starts shouting.
+- Start screen now has three apps, so chillin can reach "mega chillin bruh".
+- **Still to build from this round:** nested to-dos in Study (below), per-module chillin for +1,
+  and the Money week planner (set each day's shift).
+
+### R. Nested to-dos (Seb, 2026-09-23)
+A thing can hold things: "Final study" → "Chapter 4" → "practice problems", as deep as it goes. A
+parent shows its children's progress (3 of 8) and is done when they are. Tap to open a level, swipe
+to tick off, add a child from inside a parent. Class, due date, do-it-on date and priority live on
+any level, and children inherit the class.
+
 ### Built 2026-09-23 (later)
 - +1: bubbles removed (Seb didn't like them), and you can fix a day's best set from the history.
 - Start screen: "Back up everything" and "Restore" in one file, covering both apps.

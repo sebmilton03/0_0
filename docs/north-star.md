@@ -7,7 +7,7 @@ their own cards with caps, and anything over goes to pocket or savings. So only 
 watching: **hours → paychecks**, and **pocket money**. Check-ins keep both accurate.
 
 **What 0_0 is.** A few tiny apps behind one icon. The start screen shows one line per app. Most
-days that line is the answer and you close it. Today it's Money and +1. Nothing new joins until the
+days that line is the answer and you close it. Today it's Money, Study and +1. Nothing new joins until the
 last thing has survived a real month of use.
 
 **Money in one line:** how many hours to work this week, and whether you're ahead or behind.
@@ -19,6 +19,11 @@ last thing has survived a real month of use.
 - Log shifts mid-week if you like, and this week counts down. A weekly total replaces them.
 - Paydays: the same card every time, with two numbers off the stub (take-home and hours). $/hr is
   the average of the last 3 checks.
+
+**Study.** 20 hours a week, starting fresh every Monday. Nothing carries over, because a habit isn't
+a bill. One long purple line (about 5,000px, so ten minutes visibly moves it) fills as you study.
+Start runs off a timestamp, so it survives the phone sleeping; over 8 hours is treated as a mistake
+and capped. Forgot to start? Add minutes by hand. Quiet when the week's done.
 
 **+1.** One number a day that grows by one. Tap adds 1. Hold and slide adds or takes off many (amber
 means a gesture is live). Each slide is a set, and your best set is kept with its history.
@@ -37,7 +42,7 @@ pre-filled, because typing it is checking it. No bank sync.
 
 **Build rules.**
 - Simple beats clever. If a screen needs explaining, the screen is wrong. The pay lag taught us that.
-- One file per app until it hurts: `money/money.js`, `plusone/index.html`. `money/test.html` stays
+- One file per app until it hurts: `money/money.js`, `study/index.html`, `plusone/index.html`. `money/test.html` stays
   all green.
 - New ideas go in `docs/parked.md`, not the code.
 - No personal numbers in the code. The repo is public, so setup collects them on the phone.

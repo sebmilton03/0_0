@@ -37,6 +37,7 @@
   <div class="stack" id="stack" hidden></div>
   <div class="apps" id="apps">
     <a class="app" href="money/"><span class="ic">$</span><div><b>Money</b><small id="moneyLine">&nbsp;</small></div><span class="go">›</span></a>
+    <a class="app" href="study/"><span class="ic">✎</span><div><b>Study</b><small id="studyLine">&nbsp;</small></div><span class="go">›</span></a>
     <a class="app" href="plusone/"><span class="ic">+1</span><div><b>+1</b><small id="plusLine">&nbsp;</small></div><span class="go">›</span></a>
   </div>
   <p class="backup">Your apps keep everything on this phone. Updates don't touch it.<br>
@@ -48,7 +49,7 @@
   // The start screen: one line per app, so most days you don't need to open either.
   // Money's line is worked out fresh. +1 leaves its own line each time you open it.
   function render() {
-    const m = document.getElementById('moneyLine'), p = document.getElementById('plusLine'), face = document.getElementById('face');
+    const m = document.getElementById('moneyLine'), p = document.getElementById('plusLine'), st = document.getElementById('studyLine'), face = document.getElementById('face');
     const s = load();
     face.textContent = '0_0'; face.className = 'mark';
     if (!s || !validState(s)) m.textContent = 'Set up';
@@ -63,14 +64,20 @@
           : w.ahead < 0 ? '<span class="amber">' + -w.ahead + ' behind</span>' : 'on track');
       }
     }
-    let line = null;
-    try { line = JSON.parse(localStorage.getItem('plus-one-line')); } catch {}
-    const d = new Date(Date.now() - 4 * 36e5), plusToday = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 864e5;   // +1's day ends at 4 AM
+    // Study and +1 each leave a line behind when you open them.
+    const read = k => { try { return JSON.parse(localStorage.getItem(k)); } catch { return null; } };
+    const now = new Date(), day = Date.UTC(now.getFullYear(), now.getMonth(), now.getDate()) / 864e5;
+    const monday = new Date((day - ((new Date(day * 864e5).getUTCDay() + 6) % 7)) * 864e5).toISOString().slice(0, 10);
+    const sl = read('0_0-line-study'), sThisWeek = !!(sl && sl.week === monday);   // Study runs Mon–Sun
+    st.textContent = sThisWeek ? sl.text : sl ? 'New week' : 'Set a weekly target';
+    st.className = sThisWeek && sl.done ? 'green' : '';
+    let line = read('plus-one-line');
+    const pd = new Date(Date.now() - 4 * 36e5), plusToday = Date.UTC(pd.getFullYear(), pd.getMonth(), pd.getDate()) / 864e5;   // +1's day ends at 4 AM
     const fresh = line && line.day === plusToday;
     p.textContent = fresh ? line.text : 'Not opened today';
 
     // Chillin stacks, but only when every app is quiet at once.
-    const quiet = [m.textContent === 'You’re chillin', !!(fresh && line.done)];
+    const quiet = [m.textContent === 'You’re chillin', !!(sThisWeek && sl.done), !!(fresh && line.done)];
     const all = quiet.every(Boolean), n = quiet.length;
     const LEVELS = ['', 'You’re chillin', 'You’re hecka chillin', 'You’re mega chillin bruh'];
     document.getElementById('stack').hidden = !all;
@@ -79,7 +86,7 @@
     if (all) { face.textContent = '-_-'; face.className = 'mark dim'; }
   }
   // One file with everything both apps have saved, so an update or a wiped browser can't lose it.
-  const KEYS = ['0_0-money-v1', 'plus-one-v1'];
+  const KEYS = ['0_0-money-v1', '0_0-study-v1', 'plus-one-v1'];
   document.getElementById('save').onclick = () => {
     const data = { app: '0_0', kind: 'everything', exported: new Date().toISOString().slice(0, 10), keys: {} };
     for (const k of KEYS) { const v = localStorage.getItem(k); if (v) data.keys[k] = v; }

@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0a0a0a">
+<title>Study</title>
+<link rel="manifest" href="../manifest.json">
+<link rel="icon" href="../icon-192.png">
+<link rel="apple-touch-icon" href="../icon-192.png">
+<style>
+  :root {
+    --bg: #0a0a0a; --card: #1a1a1a; --line: #232323; --text: #f3f3f3; --muted: #8d8d8d; --dim: #3d3d3d;
+    --green: #3ecf8e; --amber: #e8a857; --track: #262626; --purple: #9d7bff; --purple-dim: #6a52b8;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    font-variant-numeric: tabular-nums; -webkit-tap-highlight-color: transparent;
+  }
+  button { font: inherit; color: inherit; background: none; border: none; padding: 0; cursor: pointer; }
+  input { font: inherit; color: inherit; }
+  p { margin: 0; }
+  main { max-width: 440px; min-height: 100%; margin: 0 auto; display: flex; flex-direction: column;
+    padding: calc(22px + env(safe-area-inset-top)) 22px calc(22px + env(safe-area-inset-bottom)); }
+  .top { display: flex; justify-content: space-between; align-items: center; min-height: 40px; }
+  .mark { font-size: 27px; font-weight: 700; color: inherit; text-decoration: none; }
+  .top.dim { color: var(--dim); }
+  .top.dim .mark { font-size: 30px; letter-spacing: -1px; }
+  .icon { display: grid; place-items: center; width: 44px; height: 44px; margin: -10px -10px -10px 0; color: inherit; }
+  .label { font-size: 12px; letter-spacing: 1.7px; text-transform: uppercase; color: var(--muted); font-weight: 600; text-align: center; }
+  .big { display: flex; justify-content: center; align-items: baseline; gap: 8px; margin-top: 8px; }
+  .big b { font-size: 76px; font-weight: 700; letter-spacing: -3px; line-height: 1; }
+  .big span { font-size: 25px; font-weight: 600; color: #9a9a9a; }
+  .sub { margin-top: 10px; font-size: 17px; color: var(--muted); text-align: center; }
+  .sub b { color: var(--text); font-weight: 600; }
+  svg { display: block; margin: 4px auto 0; width: 100%; height: auto; }
+  .spacer { flex: 1; min-height: 12px; }
+  .btn { width: 100%; height: 60px; border-radius: 30px; background: #fff; color: #0a0a0a; font-size: 19px; font-weight: 600; }
+  .btn.go { background: var(--purple); color: #120a26; }
+  .btn:active, .ghost:active { transform: scale(.98); }
+  .ghost { width: 100%; height: 56px; border-radius: 28px; border: 1.5px solid #3a3a3a; font-size: 17px; font-weight: 600; }
+  .acts { display: flex; gap: 10px; } .acts > * { flex: 1; }
+  .link { display: block; width: 100%; margin-top: 14px; font-size: 15px; color: var(--muted); text-align: center; }
+  .say { text-align: center; }
+  .say h1 { margin: 0; font-size: 58px; font-weight: 700; letter-spacing: -2px; line-height: 1.03; color: var(--green); }
+  .say p { margin-top: 26px; font-size: 18.5px; line-height: 1.6; color: var(--muted); }
+  .foot { font-size: 14px; color: #5a5a5a; text-align: center; line-height: 1.6; }
+  .sheet { position: fixed; inset: 0; z-index: 10; display: flex; align-items: flex-end; background: rgba(0,0,0,.6); }
+  .panel { width: 100%; max-width: 440px; margin: 0 auto; padding: 22px 22px calc(22px + env(safe-area-inset-bottom));
+    border-radius: 22px 22px 0 0; background: #151515; border-top: 1px solid var(--line); }
+  .field { display: flex; align-items: baseline; gap: 6px; background: #0f0f0f; border-radius: 20px; padding: 14px 20px; margin-top: 12px; border: 1.5px solid transparent; }
+  .field:focus-within { border-color: #333; }
+  .field input { flex: 1; width: 100%; min-width: 0; background: none; border: none; outline: none; font-size: 38px; font-weight: 700; caret-color: var(--purple); padding: 0; }
+  .field input::placeholder { color: #3a3a3a; }
+  .field .r { font-size: 15px; color: var(--muted); }
+  .hint { margin-top: 10px; font-size: 13.5px; line-height: 1.5; color: var(--muted); }
+  .err { margin-top: 10px; font-size: 14px; color: #e5645e; }
+  .chips { display: flex; gap: 8px; margin-top: 12px; }
+  .chip { flex: 1; height: 44px; border-radius: 22px; background: #0f0f0f; display: grid; place-items: center; font-size: 15px; font-weight: 600; color: #ddd; }
+  .chip.on { background: #fff; color: #0a0a0a; }
+</style>
+</head>
+<body>
+<main id="app"></main>
+<script>
+// Study: 20 hours a week, starting fresh every Monday. Nothing carries over — a habit isn't a bill.
+// The long purple line is the week. Press start and it keeps moving while you study.
+'use strict';
+
+const KEY = '0_0-study-v1';     // Money and +1 live on the same site, so keys must not collide
+const LINE = '0_0-line-study';  // one line for the start screen
+const DAY = 864e5;
+const isoOf = d => new Date(d * DAY).toISOString().slice(0, 10);
+const dayOf = s => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10)) / DAY;
+function today() { const n = new Date(); return Date.UTC(n.getFullYear(), n.getMonth(), n.getDate()) / DAY; }
+const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const short = s => s.slice(0, 3);
+const fmtDay = d => { const x = new Date(d * DAY); return short(WEEKDAYS[x.getUTCDay()]) + ' ' + short(MONTHS[x.getUTCMonth()]) + ' ' + x.getUTCDate(); };
+const mondayOf = d => d - ((new Date(d * DAY).getUTCDay() + 6) % 7);   // weeks run Mon–Sun
+const hrs = m => String(Math.round(m / 6) / 10);                      // minutes → 7.5
+const clock = m => Math.floor(m / 60) + ':' + String(Math.floor(m % 60)).padStart(2, '0');
+
+const $ = id => document.getElementById(id);
+let state = null, sheet = null, tick = null;
+
+function load() { try { return JSON.parse(localStorage.getItem(KEY)); } catch { return null; } }
+function save() { try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {} }
+function fresh() { return { v: 1, target: 20, days: {}, running: null }; }
+
+// Minutes this week, plus whatever the running session has racked up.
+function running() { return state.running ? Math.max(0, (Date.now() - state.running) / 6e4) : 0; }
+function weekMinutes() {
+  const mon = mondayOf(today());
+  let t = 0;
+  for (let d = mon; d < mon + 7; d++) t += state.days[isoOf(d)] || 0;
+  return t + running();
+}
+function status() {
+  const target = state.target * 60, done = weekMinutes();
+  const mon = mondayOf(today()), daysLeft = 7 - (today() - mon);
+  return { target, done, left: Math.max(0, target - done), daysLeft, perDay: Math.max(0, target - done) / daysLeft, full: done >= target, mon };
+}
+
+/* ---------- The line ----------
+   One long path, about 5,000px of it, so ten minutes of studying visibly moves the head.
+   Each pass is drawn over a casing in the background colour, which is what makes the
+   crossings look woven. */
+function points() {
+  const rows = 13, top = 26, bottom = 408, dy = (bottom - top) / (rows - 1), pts = [];
+  for (let r = 0; r < rows; r++) {
+    const y = top + r * dy, ltr = r % 2 === 0;
+    const wob = i => Math.sin(r * 2.3 + i * 1.6) * 11;                      // no two rows the same
+    const xs = ltr ? [24, 96 + wob(1), 186 + wob(2), 272 + wob(3), 340] : [340, 268 + wob(4), 178 + wob(5), 88 + wob(6), 24];
+    xs.forEach((x, i) => pts.push([x, y + wob(i) * .8]));
+    if (r === 2 || r === 6 || r === 10) {                                   // loops that cross back over the row above
+      const s = ltr ? -1 : 1, x0 = ltr ? 340 : 24;
+      pts.push([x0 + s * 8, y - 30], [x0 + s * 62, y - 52], [x0 + s * 104, y - 18], [x0 + s * 74, y + 14], [x0 + s * 20, y + 6]);
+    }
+  }
+  return pts;
+}
+function pathD() {
+  const pts = points();
+  let d = 'M ' + pts[0][0] + ' ' + pts[0][1];
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[i - 1] || pts[i], p1 = pts[i], p2 = pts[i + 1], p3 = pts[i + 2] || pts[i + 1];
+    d += ' C ' + (p1[0] + (p2[0] - p0[0]) / 5) + ' ' + (p1[1] + (p2[1] - p0[1]) / 5) + ', ' +
+         (p2[0] - (p3[0] - p1[0]) / 5) + ' ' + (p2[1] - (p3[1] - p1[1]) / 5) + ', ' + p2[0] + ' ' + p2[1];
+  }
+  return d;
+}
+const D = pathD();
+function lineSVG(frac) {
+  return '<svg id="line" viewBox="0 0 364 430" style="max-height:56vh">' +
+    '<path d="' + D + '" fill="none" stroke="#0a0a0a" stroke-width="15" stroke-linecap="round"/>' +
+    '<path d="' + D + '" fill="none" stroke="#242424" stroke-width="6" stroke-linecap="round"/>' +
+    '<path id="fill" d="' + D + '" fill="none" stroke="' + (frac >= 1 ? '#3ecf8e' : '#9d7bff') + '" stroke-width="6" stroke-linecap="round" pathLength="100" stroke-dasharray="' + (frac * 100).toFixed(3) + ' 100"/>' +
+    '<circle id="head" r="8" fill="' + (frac >= 1 ? '#3ecf8e' : '#9d7bff') + '" stroke="#0a0a0a" stroke-width="3"/></svg>';
+}
+function placeHead(frac) {
+  const p = $('fill'), h = $('head');
+  if (!p || !h) return;
+  const pt = p.getPointAtLength(p.getTotalLength() * Math.min(1, frac));
+  h.setAttribute('cx', pt.x); h.setAttribute('cy', pt.y);
+}
+
+/* ---------- Screens ---------- */
+const GEAR = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M10.325 4.317c.426 -1.756 2.924 -1.756 3.35 0a1.724 1.724 0 0 0 2.573 1.066c1.543 -.94 3.31 .826 2.37 2.37a1.724 1.724 0 0 0 1.065 2.572c1.756 .426 1.756 2.924 0 3.35a1.724 1.724 0 0 0 -1.066 2.573c.94 1.543 -.826 3.31 -2.37 2.37a1.724 1.724 0 0 0 -2.572 1.065c-.426 1.756 -2.924 1.756 -3.35 0a1.724 1.724 0 0 0 -2.573 -1.066c-1.543 .94 -3.31 -.826 -2.37 -2.37a1.724 1.724 0 0 0 -1.065 -2.572c-1.756 -.426 -1.756 -2.924 0 -3.35a1.724 1.724 0 0 0 1.066 -2.573c-.94 -1.543 .826 -3.31 2.37 -2.37c1 .608 2.296 .07 2.572 -1.065z"/><path d="M9 12a3 3 0 1 0 6 0a3 3 0 0 0 -6 0"/></svg>';
+const bar = (face, dim) => '<div class="top' + (dim ? ' dim' : '') + '"><a class="mark" href="../" aria-label="All apps">' + face + '</a>' +
+  '<button class="icon" data-act="settings" aria-label="Settings">' + GEAR + '</button></div>';
+
+function render() {
+  const s = status(), frac = s.done / s.target;
+  let html;
+  if (s.full && !state.running) {
+    html = bar('-_-', true) + '<div class="spacer"></div><div class="say"><h1>You’re<br>chillin</h1>' +
+      '<p>' + hrs(s.done) + ' of ' + state.target + ' hours this week.<br>Nothing due till Monday.</p></div>' +
+      '<div class="spacer"></div><p class="foot">' + fmtDay(today()) + ' · next week starts Mon ' +
+      new Date((s.mon + 7) * DAY).getUTCDate() + '</p><button class="link" data-act="more">Study anyway</button>';
+  } else if (state.running) {
+    html = bar('Study') + '<div class="label">Studying · started ' + new Date(state.running).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) + '</div>' +
+      '<div class="big"><b id="t">' + clock(running()) + '</b><span>this session</span></div>' +
+      '<p class="sub"><b>' + hrs(s.done) + '</b> of ' + state.target + ' this week</p>' + lineSVG(Math.min(1, frac)) +
+      '<div class="spacer"></div><div class="acts"><button class="ghost" data-act="cancel">Throw away</button><button class="btn" data-act="stop">Done</button></div>';
+  } else {
+    html = bar('Study') + '<div class="label">This week · Mon – Sun</div>' +
+      '<div class="big"><b>' + hrs(s.done) + '</b><span>of ' + state.target + ' hrs</span></div>' +
+      '<p class="sub">' + s.daysLeft + (s.daysLeft === 1 ? ' day' : ' days') + ' left · <b>about ' + hrs(s.perDay) + ' a day</b></p>' +
+      lineSVG(frac) + '<div class="spacer"></div><button class="btn go" data-act="start">Start studying</button>' +
+      '<button class="link" data-act="add">+ Add time by hand</button>';
+  }
+  $('app').innerHTML = html;
+  placeHead(Math.min(1, frac));
+  publish(s);
+}
+
+// One line for the 0_0 start screen.
+function publish(s) {
+  const text = s.full ? 'Done for the week' : hrs(s.done) + ' of ' + state.target + ' hrs · about ' + hrs(s.perDay) + ' a day';
+  try { localStorage.setItem(LINE, JSON.stringify({ week: isoOf(s.mon), text, done: s.full })); } catch {}
+}
+
+function startTick() {
+  clearInterval(tick);
+  if (!state.running) return;
+  tick = setInterval(() => {
+    const s = status();
+    if ($('t')) $('t').textContent = clock(running());
+    if ($('fill')) {
+      const frac = Math.min(1, s.done / s.target);
+      $('fill').setAttribute('stroke-dasharray', (frac * 100).toFixed(3) + ' 100');
+      placeHead(frac);
+    }
+  }, 1000);
+}
+
+function addMinutes(day, mins) {
+  const k = isoOf(day);
+  state.days[k] = Math.max(0, Math.round((state.days[k] || 0) + mins));
+  if (!state.days[k]) delete state.days[k];
+}
+
+/* ---------- Sheets ---------- */
+function openSheet(html) {
+  closeSheet();
+  sheet = document.createElement('div');
+  sheet.className = 'sheet';
+  sheet.innerHTML = '<div class="panel">' + html + '</div>';
+  document.body.appendChild(sheet);
+  sheet.addEventListener('click', e => { if (e.target === sheet) closeSheet(); });
+}
+function closeSheet() { if (sheet) sheet.remove(); sheet = null; }
+
+function addSheet() {
+  openSheet('<span class="label" style="text-align:left;display:block">Add time</span>' +
+    '<div class="chips" id="when"><button class="chip on" data-day="0">Today</button><button class="chip" data-day="-1">Yesterday</button></div>' +
+    '<label class="field"><input id="mins" inputmode="numeric" autocomplete="off" placeholder="0"><span class="r">minutes</span></label>' +
+    '<p class="hint">For when you studied without pressing start.</p><p class="err" id="addErr" hidden></p>' +
+    '<div class="acts" style="margin-top:16px"><button class="ghost" data-act="close">Cancel</button><button class="btn" data-act="addSave">Add</button></div>');
+  $('mins').focus();
+}
+function settingsSheet() {
+  openSheet('<span class="label" style="text-align:left;display:block">Hours a week</span>' +
+    '<label class="field"><input id="tgt" inputmode="decimal" autocomplete="off" value="' + state.target + '"><span class="r">hrs</span></label>' +
+    '<p class="hint">Starts fresh every Monday. A short week doesn’t pile onto the next one.</p>' +
+    '<p class="hint">This week so far: ' + hrs(status().done) + ' hrs. Back up from the 0_0 start screen.</p>' +
+    '<p class="err" id="setErr" hidden></p>' +
+    '<div class="acts" style="margin-top:16px"><button class="ghost" data-act="close">Cancel</button><button class="btn" data-act="setSave">Save</button></div>');
+}
+
+function buzz(p) { try { navigator.vibrate && navigator.vibrate(p); } catch {} }
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('[data-act], [data-day]');
+  if (!b) return;
+  if (b.dataset.day !== undefined) {
+    sheet.querySelectorAll('[data-day]').forEach(c => c.classList.toggle('on', c === b));
+    return;
+  }
+  const act = b.dataset.act;
+  if (act === 'start') { state.running = Date.now(); save(); render(); startTick(); buzz(12); }
+  if (act === 'stop' || act === 'cancel') {
+    const mins = running();
+    if (act === 'stop' && mins >= 1) addMinutes(today(), mins);
+    state.running = null;
+    save(); render(); clearInterval(tick);
+    buzz(act === 'stop' ? [20, 50, 20] : 10);
+  }
+  if (act === 'add') addSheet();
+  if (act === 'addSave') {
+    const v = Number($('mins').value), off = +sheet.querySelector('.chip.on').dataset.day;
+    if (!Number.isFinite(v) || v <= 0 || v > 1440) { $('addErr').textContent = 'Minutes, 1 to 1440.'; $('addErr').hidden = false; return; }
+    addMinutes(today() + off, v); save(); closeSheet(); render(); buzz(12);
+  }
+  if (act === 'settings') settingsSheet();
+  if (act === 'setSave') {
+    const v = Number($('tgt').value);
+    if (!Number.isFinite(v) || v <= 0 || v > 80) { $('setErr').textContent = 'Hours a week, 1 to 80.'; $('setErr').hidden = false; return; }
+    state.target = v; save(); closeSheet(); render();
+  }
+  if (act === 'close') closeSheet();
+  if (act === 'more') { state.running = Date.now(); save(); render(); startTick(); }
+});
+
+// A session left running overnight is a mistake, not a record: cap it and say so.
+function guard() {
+  if (!state.running) return;
+  const mins = running();
+  if (mins > 8 * 60) {
+    addMinutes(today(), 8 * 60);
+    state.running = null;
+    save();
+    setTimeout(() => alert('That session ran over 8 hours, so it was saved as 8. Fix it with Add time if that’s wrong.'), 50);
+  }
+}
+
+state = load() || fresh();
+guard();
+render();
+startTick();
+document.addEventListener('visibilitychange', () => { if (!document.hidden) { guard(); render(); startTick(); } });
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('../sw.js').catch(() => {});
+</script>
+</body>
+</html>
