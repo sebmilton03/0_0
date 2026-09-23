@@ -30,6 +30,38 @@ Rough order, most valuable first.
 Shipped as the To-do tab in Study, as described below. Still parked from that round: per-module
 chillin for +1, and the Money week planner (set each day's shift).
 
+### T. Hours per shift (next up)
+Seb needs the week number *and* today's number: "how long is this shift?" Hours left ÷ shifts left.
+MVP can hardcode 4 shifts a week; later make it customisable (and it falls out of the week planner,
+where he sets each day). Likely home: tap the week box to see where he's at inside the week.
+
+### U. Study sessions that match real life (next up)
+- A goal for the session, set when he sits down ("90 minutes", or a to-do item).
+- **Pause and resume as one session** — a lunch break shouldn't end it.
+- **Kill "Throw away."** He may study 20 minutes then get sidetracked; that time must never be lost.
+  Pause banks it; Done saves it. Discarding, if it exists at all, is for an accidental start only.
+- The to-do list has to be reachable *while* studying, so he can tick pieces off as he goes.
+
+### V. To-dos: get done ones out of the way (next up)
+Finished things sitting in the list are clutter. Collapse them into "Done (3)" at the bottom, or hide
+them until asked.
+
+### W. +1 with more than push-ups
+Pull-ups, other exercises, maybe a meditation timer — each with its own rate of increase and its own
+unit (reps or minutes). The hard part is the day being partial across several things, finished at
+different times. The shape that solves it: **one counter engine, many trackers.** A tracker is a unit
+(reps or minutes), a clock (day or week), a target rule (fixed, +1 a day, custom) and an input (tap,
+hold-and-slide, or a timer). Today's screen is a short list of trackers with progress; tap one to
+count; the app is quiet when they're all done. That single model also covers Study's hours, meditation,
+sleep wind-down, outside time and cleaning — it's the "three shapes" idea made real. Worth doing when
+exercise #2 actually arrives, not before.
+
+### X. The fidget (Seb's idea)
+A ball that spins in wider, faster circles the longer you hold it, and flies off when you let go —
+harder to aim the faster it's going. **Where it belongs: only on the chillin screen**, behind the
+clouds. A game on a busy screen invites opening the app when bored, which is the opposite of the
+point; a game that only exists when there's nothing to do is a reward for being done.
+
 ### S. Make the squiggle's bumps into landmarks (Seb, 2026-09-24)
 He noticed the dips and loops work as waypoints: "just make it past this bump and loop over here."
 Lean into it — give the line distinct features at regular spots (a big loop around a quarter of the
