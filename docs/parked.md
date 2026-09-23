@@ -30,6 +30,12 @@ Rough order, most valuable first.
 Shipped as the To-do tab in Study, as described below. Still parked from that round: per-module
 chillin for +1, and the Money week planner (set each day's shift).
 
+### S. Make the squiggle's bumps into landmarks (Seb, 2026-09-24)
+He noticed the dips and loops work as waypoints: "just make it past this bump and loop over here."
+Lean into it — give the line distinct features at regular spots (a big loop around a quarter of the
+way, a long straight before the last stretch), maybe a faint marker at each 5 hours, so the shape
+becomes a route you learn. Keep it one line, no labels, nothing to tap.
+
 ### R. Nested to-dos (Seb, 2026-09-23) — built
 A thing can hold things: "Final study" → "Chapter 4" → "practice problems", as deep as it goes. A
 parent shows its children's progress (3 of 8) and is done when they are. Tap to open a level, swipe
