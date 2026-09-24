@@ -229,7 +229,8 @@
     <h2 style="margin-top: 18px">Welcome to +1</h2>
     <ul class="rules">
       <li>Day ends at 4 AM</li>
-      <li>A skip every 10 days covers a miss</li>
+      <li>What you don’t finish carries to the next day</li>
+      <li>A skip every 10 days covers a miss, and wipes what you owe</li>
       <li>No skips: 10 days to make a song</li>
       <li>Miss that: blackout, 100 in a day to be reborn</li>
     </ul>
@@ -247,6 +248,7 @@
   const CUTOFF = 4;        // a day ends at 4 AM, so late-night sets count for the day before
   const SONG_DAYS = 10;    // days to make a song after a miss with no skips left
   const BLACKOUT = 100;    // push-ups in one day to be reborn
+  const CARRY = true;      // what you don't finish is owed the next day
   const KEY = 'plus-one-v1';
   // Test mode was removed; clear anything it left behind.
   try { localStorage.removeItem('plus-one-mode'); localStorage.removeItem('plus-one-test'); } catch {}
@@ -279,11 +281,16 @@
       rules: [],   // [{ at: date, rule: [1, 2, 'rest', ...] }], each takes effect on `at`
       rested: [],  // rest days tapped as done
       sets: {},    // reps in each set, per date: a slide is one set, so are quick taps in a row
+      carryFrom: t,// from this day on, what you don't finish is owed the next day
     };
   }
   // The first two versions saved the running totals instead; their targets always equalled the day.
   function migrate(s) {
-    if (s.v === 3) { s.rested ??= []; s.sets ??= {}; return s; }
+    if (s.v === 3) {
+      s.rested ??= []; s.sets ??= {};
+      s.carryFrom ??= today();   // carry-over starts today, so old days keep their old result
+      return s;
+    }
     if (s.used !== undefined) {
       const n = s.settled + 1 - s.start + 1;
       s.skips = s.blackout ? 0 : Math.max(0, 1 + Math.floor(n / 10) - s.used);
@@ -297,7 +304,7 @@
         from: s.settled + 1, start: s.start, num: last, skips: s.skips, lastEarned: s.lastEarned,
         lastDone: { n: lastDone, day: lastDone }, song: s.song, blackout: s.blackout, base: s.base, log: s.log,
       },
-      done: s.done, songs: [], rules: [], rested: [], sets: {},
+      done: s.done, songs: [], rules: [], rested: [], sets: {}, carryFrom: today(),
     };
   }
   function load() {
@@ -319,7 +326,8 @@
       song: o.song, blackout: o.blackout, log: o.log.slice(), days: {},
     };
     const changes = new Map(state.rules.map(r => [r.at, r.rule]));
-    let num = o.num, rule = [1], ruleFrom = o.from, hold = null;
+    let num = o.num, rule = [1], ruleFrom = o.from, hold = null, owed = 0;
+    const from = state.carryFrom ?? Infinity;
 
     for (let e = o.from; e <= t; e++) {
       if (changes.has(e)) { rule = changes.get(e); ruleFrom = e; }
@@ -347,18 +355,29 @@
         if (slot === 'rest') day = { kind: 'rest' };
         else { num += slot; day = { kind: 'work', target: num }; }
       }
+      // What you didn't finish yesterday is added to today, capped at one day's worth so it
+      // can't snowball. A skip wipes it. Rest days hold it over untouched.
+      day.owed = 0;
+      if (CARRY && owed && e >= from && day.kind === 'work') {
+        day.owed = owed;
+        day.target += owed;
+      }
       day.no = e - s.start + 1;
       day.num = num;
       s.days[e] = day;
       if (e === t) break;
 
       if (day.kind === 'work') {
-        if (n >= day.target) s.lastDone = { n: day.target, day: day.no };
-        else if (s.skips > 0) { s.skips--; s.log.push([e, 'skip']); }
-        else if (s.song !== null) blackout(s, e);
-        else { s.song = e + SONG_DAYS; s.log.push([e, 'song-start']); }
+        if (n >= day.target) { s.lastDone = { n: day.target, day: day.no }; owed = 0; }
+        else {
+          owed = e >= from ? Math.min(day.target - n, day.num) : 0;   // never more than a day's worth
+          if (s.skips > 0) { s.skips--; s.log.push([e, 'skip']); owed = 0; }   // a skip wipes what you owe
+          else if (s.song !== null) blackout(s, e);
+          else { s.song = e + SONG_DAYS; s.log.push([e, 'song-start']); }
+        }
       }
       if (s.song !== null && e >= s.song) blackout(s, e);
+      if (s.blackout) owed = 0;   // a blackout is a clean slate
       // A skip on days 10, 20, 30... paid once per number, so repeated days don't pay twice.
       const next = e + 1 - s.start + 1;
       if (!s.blackout && next % 10 === 0 && next > s.lastEarned) { s.skips++; s.lastEarned = next; }
@@ -368,6 +387,7 @@
   }
   function blackout(s, d) {
     s.blackout = true;
+    s.owedCleared = true;
     s.song = null;
     s.skips = 0;
     s.log.push([d, 'blackout']);
@@ -411,8 +431,10 @@
     }
 
     const usedSkip = !dark && s.log.some(([d, e]) => d === t - 1 && e === 'skip');
-    $('strip').hidden = !usedSkip;
-    if (usedSkip) $('strip').textContent = 'Day ' + (t - s.start) + ' missed · skip used · ' + skips + ' left';
+    const owed = !dark && day.owed ? day.owed : 0;
+    $('strip').hidden = !usedSkip && !owed;
+    if (owed) $('strip').textContent = owed + ' carried over · ' + day.target + ' today (' + day.num + ' + ' + owed + ')';
+    else if (usedSkip) $('strip').textContent = 'Day ' + (t - s.start) + ' missed · skip used · ' + skips + ' left';
 
     const song = s.song !== null && !dark;
     if (song && $('song').hidden) $('song').classList.remove('gone');
