@@ -20,6 +20,8 @@ https://sebmilton03.github.io/0_0/ — repo `sebmilton03/0_0` (public), local `D
   log (shift, paycheck, pocket), settings, export/import. 84 checks in `money/test.html`.
 - **Study** (`study/`) — 20 hrs/week fresh each Monday on the long purple line, start/done, add time by
   hand, own chillin; **To-do** tab with nesting (a thing holds things), swipe to tick, class inherits.
+- **Carry-over (24 Sep):** in both copies of +1, what you don't finish is owed the next day, capped
+  at one day's worth, wiped by a skip, counting only from the day it shipped.
 - **+1** (`plusone/`) — day counter, hold-and-slide to count, sets and best-set history. A copy of the
   original, which still lives at `/-1/` and shares the same data.
 
