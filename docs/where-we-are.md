@@ -1,4 +1,4 @@
-# Where we are — save point, Thu 24 Sep 2026
+# Where we are — save point, Thu 15 Oct 2026
 
 Read this with `north-star.md` at the start of a session. It's the state; the north star is the why.
 
@@ -14,10 +14,20 @@ and it has to survive real use.
 
 https://sebmilton03.github.io/0_0/ — repo `sebmilton03/0_0` (public), local `Desktop\Rupart\0_0\Money`.
 
-- **Start screen** — one line per app; chillin stacks to "mega chillin bruh"; back up / restore everything.
+- **Start screen** — one line per app; chillin stacks to "mega chillin bruh" (four apps now); back up /
+  restore everything, Valley included. A Valley backup restored here goes to Valley, never into Money.
 - **Money** (`money/`) — this week's hours and ahead/behind, week boxes for the 4-week stretch, shifts
   counting the week down, tap a week to plan or inspect, next-check line, pocket, clouds over chillin,
   log (shift, paycheck, pocket), settings, export/import. 84 checks in `money/test.html`.
+- **Valley** (`valley/`, new 15 Oct) — the monthly split. Dam Day on the 1st: type the balances, get
+  the transfer list (Bills to target, Gas and Misc to caps, Personal refill, Vault, then the leftover:
+  Reggie first by Seb's switch, then the Roth, then 75/25 invest/fun), tick each transfer, close. Plus
+  the valley home (jars, boss HP, Roth tree, freedom meter, next up), why-sheets behind every number,
+  Pay Cloud (shift timer, shifts, paychecks → $/hr, pay schedule from a stub), Personal (fun money a
+  day, subscriptions, wishlist, leak guard / IOUs), Path (1/5/10 years or to 50, life events,
+  milestones), Compare, Rules with a ripple preview, Settings, export/import. Seb's numbers are not in
+  the repo: they come from his setup file, imported on the phone. 94 checks in `valley/test.html`
+  (a made-up example checked against a separate model).
 - **Study** (`study/`) — 20 hrs/week fresh each Monday on the long purple line, start/done, add time by
   hand, own chillin; **To-do** tab with nesting (a thing holds things), swipe to tick, class inherits.
 - **Carry-over (24 Sep):** in both copies of +1, what you don't finish is owed the next day, capped
@@ -25,11 +35,15 @@ https://sebmilton03.github.io/0_0/ — repo `sebmilton03/0_0` (public), local `D
 - **+1** (`plusone/`) — day counter, hold-and-slide to count, sets and best-set history. A copy of the
   original, which still lives at `/-1/` and shares the same data.
 
-Real dates that matter: **first real money test is Sat 31 Oct** (the app's November number vs the bank).
+Real dates that matter: **first real money test is Sat 31 Oct** (the app's November number vs the bank),
+and **the first real Dam Day is Sun 1 Nov** (Valley's transfer list vs what the bank shows after).
 Three-check months: **Mar 2027, Aug 2027**.
 
 ## Next up, in order
 
+0. **Dam Day, 1 Nov**: do the real split in Valley, then the double-check. Anything that didn't match
+   the bank is the first thing to fix. Log each paycheck in Valley as it lands (Oct 12's now, then
+   Oct 26) so its $/hr stops being a guess.
 1. **Hours per shift** (asked 24 Sep): show hours left for the week *and* what to work today. MVP can
    hardcode 4 shifts a week; make it customizable later. Probably lives on the week box.
 2. **Study session rework**: a goal for the session, pause and resume as one session, to-dos visible
@@ -46,5 +60,5 @@ Three-check months: **Mar 2027, Aug 2027**.
 ## How we work
 
 Direct, no fluff. Challenge before building. Nothing new until the last thing survived real use. New
-ideas go to `parked.md`, not the code. `money/test.html` stays green. Personal numbers never go in the
+ideas go to `parked.md`, not the code. `money/test.html` and `valley/test.html` stay green. Personal numbers never go in the
 code — the repo is public and setup collects them on the phone. Commit and push only when Seb says.

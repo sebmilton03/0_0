@@ -253,9 +253,21 @@ shape entirely, and the one module that touches nothing else).
 
 ---
 
+## Built 2026-10-15: Valley (Seb reversed part of the dead list)
+
+Seb asked for Valley on 15 Oct and chose to ship it right away, before the Oct 31 test. It brings
+back several things below that were decided against, **inside Valley only**: the priority-ranked
+fill and allocation waterfall (that's Dam Day's split), an accounts screen (the jars), the wishlist,
+the shift timer (optional, never a dependency), per-app colours (each jar has one) and a game look.
+Still dead, even in Valley: automatic bank sync, streaks, badges and points, mark-a-bill-paid, the
+two-paycheck view, a daily hours target, and gamification across apps.
+From this list, Valley also covers **A** (the leak guard asks where a Personal top-up came from),
+**6** (Dam Day is the month-end transfer checklist) and part of **8** (wishes as a monthly cost).
+
 ## Deliberately dead
 
-Not parked — decided against. See `03-decisions-and-rejections.md` for reasons.
+Not parked — decided against. See `03-decisions-and-rejections.md` for reasons. (Some of these came
+back for Valley on 2026-10-15, by Seb's choice: see above.)
 
 Priority-ranked expense fill · allocation waterfall · mark-a-bill-paid · accounts screen ·
 two-paycheck view · wishlist · shift timer as a dependency · automatic bank sync · streaks,

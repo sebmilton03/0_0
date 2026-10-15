@@ -7,8 +7,9 @@ their own cards with caps, and anything over goes to pocket or savings. So only 
 watching: **hours → paychecks**, and **pocket money**. Check-ins keep both accurate.
 
 **What 0_0 is.** A few tiny apps behind one icon. The start screen shows one line per app. Most
-days that line is the answer and you close it. Today it's Money, Study and +1. Nothing new joins until the
-last thing has survived a real month of use.
+days that line is the answer and you close it. Today it's Money, Valley, Study and +1. Nothing new joins until the
+last thing has survived a real month of use. (Valley is the exception: Seb chose to ship it on 15 Oct, before
+Money's first real month.)
 
 **Money in one line:** how many hours to work this week, and whether you're ahead or behind.
 - Next month's bills get paid by the checks that land this month. The weeks behind those checks are
@@ -19,6 +20,20 @@ last thing has survived a real month of use.
 - Log shifts mid-week if you like, and this week counts down. A weekly total replaces them.
 - Paydays: the same card every time, with two numbers off the stub (take-home and hours). $/hr is
   the average of the last 3 checks.
+
+**Valley in one line:** once a month (Dam Day, the 1st) the income account splits into jars, and Valley
+says exactly which transfers to make.
+- Order, top to bottom: Bills fills to this month's target, Gas and Misc top up to their caps,
+  Personal gets its refill (minus anything borrowed), the Vault tops up. The leftover goes to the loan
+  or the Roth first (Seb's switch: the loan), then the other, then 75% investing / 25% fun.
+- Bills' target saves ahead for big bills, so the lowest point of the year sits on the cushion.
+- You type every balance on Dam Day; nothing is pre-filled. Between Dam Days the screens estimate:
+  pay that lands after your last check-in, and the month's bills and spending still to come out.
+- Path runs the same split forward (1, 5, 10 years, or to 50) with life events you can switch on.
+- It looks like a game on purpose (Seb's call): each jar keeps its own colour. Status still follows
+  the rule below: green on track, amber heads up.
+- The math is `valley/engine.js`; `valley/test.html` checks it against a separate model. The full map
+  of the data is `docs/valley-data.md`.
 
 **Study.** 20 hours a week, starting fresh every Monday. Nothing carries over, because a habit isn't
 a bill. One long purple line (about 5,000px, so ten minutes visibly moves it) fills as you study.
@@ -44,16 +59,18 @@ pre-filled, because typing it is checking it. No bank sync.
 - If it needs no action, it isn't on screen. Gaps under $100 stay silent. Anything shown can be
   dismissed.
 - No comparisons, streaks, scores or extra lines "for trust." Being right is what builds trust.
-- Colour: green = good, amber = behind or tight, red = out of reach. Nothing else.
+- Colour: green = good, amber = behind or tight, red = out of reach. Nothing else. (Valley's jar
+  colours are the one exception, by Seb's choice.)
 
 **Build rules.**
 - Simple beats clever. If a screen needs explaining, the screen is wrong. The pay lag taught us that.
-- One file per app until it hurts: `money/money.js`, `study/index.html`, `plusone/index.html`. `money/test.html` stays
-  all green.
+- One file per app until it hurts: `money/money.js`, `study/index.html`, `plusone/index.html`. Valley is two:
+  `valley/engine.js` (the math, so its test page can load it alone) and `valley/valley.js` (the screens).
+  `money/test.html` and `valley/test.html` stay all green.
 - New ideas go in `docs/parked.md`, not the code.
 - No personal numbers in the code. The repo is public, so setup collects them on the phone.
 - Commit and push only when Seb says.
 
 **Where things are.** The live app is https://sebmilton03.github.io/0_0/ (start screen). Money is at
-`money/` and +1 at `plusone/`. The old copy of +1 at `/-1/` shares the same data. The full history
+`money/`, Valley at `valley/` and +1 at `plusone/`. The old copy of +1 at `/-1/` shares the same data. The full history
 is in `../0_0-handoff/` (local only).

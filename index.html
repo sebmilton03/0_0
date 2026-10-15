@@ -37,6 +37,7 @@
   <div class="stack" id="stack" hidden></div>
   <div class="apps" id="apps">
     <a class="app" href="money/"><span class="ic">$</span><div><b>Money</b><small id="moneyLine">&nbsp;</small></div><span class="go">›</span></a>
+    <a class="app" href="valley/"><span class="ic">≈</span><div><b>Valley</b><small id="valleyLine">&nbsp;</small></div><span class="go">›</span></a>
     <a class="app" href="study/"><span class="ic">✎</span><div><b>Study</b><small id="studyLine">&nbsp;</small></div><span class="go">›</span></a>
     <a class="app" href="plusone/"><span class="ic">+1</span><div><b>+1</b><small id="plusLine">&nbsp;</small></div><span class="go">›</span></a>
   </div>
@@ -46,8 +47,8 @@
 <input type="file" id="file" accept="application/json,.json" hidden>
 <script src="money/money.js"></script>
 <script>
-  // The start screen: one line per app, so most days you don't need to open either.
-  // Money's line is worked out fresh. +1 leaves its own line each time you open it.
+  // The start screen: one line per app, so most days you don't need to open any of them.
+  // Money's line is worked out fresh. Valley, Study and +1 each leave a line when you open them.
   function render() {
     const m = document.getElementById('moneyLine'), p = document.getElementById('plusLine'), st = document.getElementById('studyLine'), face = document.getElementById('face');
     const s = load();
@@ -75,9 +76,20 @@
     const pd = new Date(Date.now() - 4 * 36e5), plusToday = Date.UTC(pd.getFullYear(), pd.getMonth(), pd.getDate()) / 864e5;   // +1's day ends at 4 AM
     const fresh = line && line.day === plusToday;
     p.textContent = fresh ? line.text : 'Not opened today';
+    // Valley leaves its line too. The days to Dam Day are counted fresh, so an old line still reads right.
+    const vl = read('0_0-line-valley'), v = document.getElementById('valleyLine');
+    let vQuiet = false;
+    v.className = '';
+    if (!localStorage.getItem('0_0-valley-v1') || !vl || !vl.split) v.textContent = 'Set up';
+    else {
+      const left = Math.round((Date.UTC(+vl.split.slice(0, 4), +vl.split.slice(5, 7) - 1, +vl.split.slice(8, 10)) / 864e5) - day);
+      if (left <= 0) { v.textContent = 'Dam Day: time to split'; v.className = 'amber'; }
+      else if (vl.kind === 'check') { v.textContent = vl.note + ' · Dam Day in ' + left + (left === 1 ? ' day' : ' days'); v.className = 'amber'; }
+      else { v.textContent = 'On track · Dam Day in ' + left + (left === 1 ? ' day' : ' days'); vQuiet = true; }
+    }
 
     // Chillin stacks, but only when every app is quiet at once.
-    const quiet = [m.textContent === 'You’re chillin', !!(sThisWeek && sl.done), !!(fresh && line.done)];
+    const quiet = [m.textContent === 'You’re chillin', vQuiet, !!(sThisWeek && sl.done), !!(fresh && line.done)];
     const all = quiet.every(Boolean), n = quiet.length;
     const LEVELS = ['', 'You’re chillin', 'You’re hecka chillin', 'You’re mega chillin bruh'];
     document.getElementById('stack').hidden = !all;
@@ -85,8 +97,8 @@
     document.getElementById('apps').className = 'apps' + (all ? ' quiet' : '');
     if (all) { face.textContent = '-_-'; face.className = 'mark dim'; }
   }
-  // One file with everything both apps have saved, so an update or a wiped browser can't lose it.
-  const KEYS = ['0_0-money-v1', '0_0-study-v1', 'plus-one-v1'];
+  // One file with everything the apps have saved, so an update or a wiped browser can't lose it.
+  const KEYS = ['0_0-money-v1', '0_0-valley-v1', '0_0-study-v1', 'plus-one-v1'];
   document.getElementById('save').onclick = () => {
     const data = { app: '0_0', kind: 'everything', exported: new Date().toISOString().slice(0, 10), keys: {} };
     for (const k of KEYS) { const v = localStorage.getItem(k); if (v) data.keys[k] = v; }
@@ -102,7 +114,8 @@
     if (!f) return;
     f.text().then(t => {
       let d; try { d = JSON.parse(t); } catch {}
-      const keys = d && (d.keys || (d.state ? { '0_0-money-v1': JSON.stringify(d.state) } : null));
+      // A single app's backup carries its kind; Valley's goes back to Valley, never into Money.
+      const keys = d && (d.keys || (d.state ? { [d.kind === 'valley' ? '0_0-valley-v1' : '0_0-money-v1']: JSON.stringify(d.state) } : null));
       if (!keys) return alert('That file isn’t a 0_0 backup.');
       if (!confirm('Replace what’s on this phone with the backup from ' + (d.exported || 'that file') + '?')) return;
       for (const [k, v] of Object.entries(keys)) localStorage.setItem(k, v);

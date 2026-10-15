@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Valley · math check</title>
+<link rel="icon" href="../icon-192.png">
+<style>
+  body { margin: 0; padding: 24px; background: #0a0a0a; color: #f3f3f3; font: 15px/1.5 system-ui, sans-serif; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 18px 0 4px; color: #8d8d8d; font-weight: 600; }
+  #sum { margin-bottom: 18px; font-weight: 600; }
+  .ok { color: #3ecf8e; } .bad { color: #e5645e; }
+  li { margin: 4px 0; } code { color: #8d8d8d; word-break: break-all; }
+  ul { padding-left: 20px; margin: 0; }
+</style>
+</head>
+<body>
+<h1>Valley · math check</h1>
+<p>Open this file any time the math changes. Every line should be green. The numbers are a made-up
+example, never yours: the repo is public.</p>
+<p id="sum"></p>
+<div id="out"></div>
+<script src="engine.js"></script>
+<script src="valley.js"></script>
+<script>
+(() => {   // everything in here stays out of valley.js's way
+  const results = [];
+  let group = '';
+  const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+  function eq(name, got, want) { results.push({ group, name, ok: same(got, want), got, want }); }
+  function near(name, got, want, tol = 0.005) { results.push({ group, name, ok: typeof got === 'number' && Math.abs(got - want) <= tol, got, want }); }
+  function yes(name, ok, got) { results.push({ group, name, ok: !!ok, got, want: true }); }
+  const r2 = VE.round2, fill = v => Array(12).fill(v), JARS = VE.JARS;
+
+  // The example: $900 rent, a $350 loan payment, $50 phone, $600 car insurance in Jan and Jul, a $120 fee in April.
+  function example() {
+    return {
+      v: 1, created: '2027-01-20', firstMonth: '2027-02',
+      jars: { income: { name: 'Income', bank: '' }, bills: { name: 'Bills', bank: '', cushion: 100 }, gas: { name: 'Gas', bank: '', cap: 500, spend: 200 },
+        misc: { name: 'Misc', bank: '', cap: 800, spend: 250 }, personal: { name: 'Personal', bank: '', amount: 150 }, vault: { name: 'Vault', bank: '', cap: 5000 } },
+      bills: [
+        { id: 'rent', name: 'Rent', amounts: fill(900) },
+        { id: 'loan', name: 'Loan payment', loan: true, amounts: fill(0) },
+        { id: 'phone', name: 'Phone', amounts: fill(50) },
+        { id: 'ins', name: 'Car insurance', amounts: [600, 0, 0, 0, 0, 0, 600, 0, 0, 0, 0, 0] },
+        { id: 'fee', name: 'Yearly fee', amounts: [0, 0, 0, 120, 0, 0, 0, 0, 0, 0, 0, 0] },
+      ],
+      loan: { name: 'Loan', owed: 12000, start: 12000, apr: 0.07, payment: 350, asOf: '2027-02' },
+      extra: { first: 'loan', rothLimit: 7000, investShare: 0.75, growth: 0.05 },
+      income: { monthly: 3000, hoursPerWeek: 35, other: 100 },
+      pay: { payDate: '2027-01-15', every: 14, lag: 5 },
+      paychecks: [], shifts: [], months: [], wishes: [], ious: [], events: [], subs: [],
+      balances: [['income', 900], ['bills', 1200], ['gas', 120], ['misc', 300], ['personal', 80], ['vault', 4800]].map(([jar, value]) => ({ date: '2027-01-20', jar, value, t: 1, checkin: true })),
+      roth: { seed: {}, balance: null }, invest: { balance: null }, timer: null, damDraft: null, birthYear: null,
+    };
+  }
+  const S = example();
+  const START = { month: '2027-02', income: 3100, bal: { bills: 1200, gas: 120, misc: 300, personal: 80, vault: 4800 }, owed: 12000, rothUsed: {}, roth: 0, invest: 0 };
+
+  group = 'Months and days';
+  eq('Nov + 3 months = Feb next year', VE.addMonths('2026-11', 3), '2027-02');
+  eq('Jan − 1 month = Dec last year', VE.addMonths('2027-01', -1), '2026-12');
+  eq('Nov 2026 → Sep 2027 is 10 months', VE.monthsBetween('2026-11', '2027-09'), 10);
+  eq('Feb 2028 has 29 days, Feb 2027 has 28', [VE.daysInMonth('2028-02'), VE.daysInMonth('2027-02')], [29, 28]);
+  eq('Oct 31 → Nov 2 is 2 days, across the clock change', VE.dayOf('2026-11-02') - VE.dayOf('2026-10-31'), 2);
+  eq('a day number turns back into the same date', VE.isoOf(VE.dayOf('2027-03-14')), '2027-03-14');
+
+  group = 'Bills: what to set aside and the target on the 1st';
+  const plan = VE.billPlan(S.bills, S.loan, S.jars.bills.cushion);
+  eq('due each month', plan.due, [1900, 1300, 1300, 1420, 1300, 1300, 1900, 1300, 1300, 1300, 1300, 1300]);
+  eq('set aside a month = the year ÷ 12 = $1,410', plan.perMonth, 1410);
+  eq('left after each month’s bills', plan.left, [160, 270, 380, 370, 480, 590, 100, 210, 320, 430, 540, 650]);
+  eq('target on the 1st', plan.target, [2060, 1570, 1680, 1790, 1780, 1890, 2000, 1510, 1620, 1730, 1840, 1950]);
+  eq('the lowest point of the year is the cushion (July)', Math.min(...plan.left), 100);
+  eq('a steady month needs exactly the set-aside (Dec → Jan)', plan.target[0] - plan.left[11], 1410);
+  const june = VE.billsWhy(plan, 5);
+  eq('June: due items', june.dueItems.map(x => [x.name, x.amount]), [['Rent', 900], ['Loan payment', 350], ['Phone', 50]]);
+  eq('June: saving ahead for car insurance (5 of 6 months) and the fee', june.ahead.map(a => [a.name, a.saved, a.perMonth, a.months, a.nextAmount]), [['Car insurance', 500, 100, 5, 600], ['Yearly fee', 20, 10, 2, 120]]);
+  eq('June: ahead total $490, shared −$30 (their low points differ)', [june.aheadTotal, june.shared], [490, -30]);
+  eq('June: due + ahead + cushion = target', june.due + june.aheadTotal + june.cushion, june.target);
+  eq('no loan: the loan row costs nothing', VE.billPlan(S.bills, null, 100).perMonth, 1060);
+
+  group = 'The split (Dam Day)';
+  const feb = VE.split({ month: '2027-02', income: 3100, bal: START.bal, owed: 12000, rothUsed: 0, iou: 0 }, S, plan);
+  eq('Feb: Bills, Gas, Misc, Personal, Vault', JARS.map(j => feb.give[j]), [370, 380, 500, 150, 200]);
+  eq('Feb: the $1,500 leftover goes to the loan', [feb.left, feb.extraLoan, feb.roth, feb.invest, feb.fun], [1500, 1500, 0, 0, 0]);
+  eq('Feb: everything adds up to the income', feb.total, 3100);
+  const febR = VE.split({ month: '2027-02', income: 3100, bal: START.bal, owed: 12000, rothUsed: 0 }, { ...S, extra: { ...S.extra, first: 'roth' } }, plan);
+  eq('switch on Roth: the leftover goes to the Roth', [febR.roth, febR.extraLoan], [1500, 0]);
+  const room = VE.split({ month: '2027-02', income: 3100, bal: START.bal, owed: 12000, rothUsed: 6500 }, { ...S, extra: { ...S.extra, first: 'roth' } }, plan);
+  eq('Roth room $500 left this year: $500 Roth, then $1,000 loan', [room.roth, room.extraLoan], [500, 1000]);
+  const lean = VE.split({ month: '2027-02', income: 1000, bal: START.bal, owed: 12000, rothUsed: 0 }, S, plan);
+  eq('only $1,000 in: top to bottom until it runs out', JARS.map(j => lean.give[j]), [370, 380, 250, 0, 0]);
+  eq('…and the shortfall is what the jars still needed', [lean.short, lean.left], [600, 0]);
+  const iou = VE.split({ month: '2027-02', income: 3100, bal: START.bal, owed: 12000, rothUsed: 0, iou: 50 }, S, plan);
+  eq('$50 borrowed: Personal gets $100, and the $50 goes on down the line', [iou.give.personal, iou.iouCharged, iou.extraLoan], [100, 50, 1550]);
+  const last = VE.split({ month: '2027-02', income: 3100, bal: START.bal, owed: 300, rothUsed: 0 }, S, plan);
+  near('last payment covers its interest: $301.75', last.carDue, 301.75);
+  near('…so Bills needs $48.25 less', last.billsTarget, 1570 - 48.25);
+  eq('…and nothing extra goes to the loan', last.extraLoan, 0);
+  eq('the loan hits exactly $0', VE.loanStep(300, 0.07, last.carDue).owed, 0);
+  const rich = VE.split({ month: '2027-02', income: 30000, bal: START.bal, owed: 12000, rothUsed: 0 }, S, plan);
+  near('a huge month: the loan is cleared, the Roth filled, the rest split 75/25', [rich.extraLoan, rich.roth, rich.invest, rich.fun].reduce((t, x) => t + x, 0), rich.left, 0.001);
+  eq('…the loan gets $11,720, the Roth $7,000, then 75% investing and 25% fun', [r2(rich.extraLoan), rich.roth, r2(rich.invest), r2(rich.fun)], [11720, 7000, 7260, 2420]);
+  eq('…and fun money goes to Personal', r2(rich.toPersonal), 150 + 2420);
+
+  group = 'The loan';
+  eq('Feb: 12,000 + $70 interest − $350 − $1,500 = $10,220', VE.loanStep(12000, 0.07, 1850).owed, 10220);
+  eq('nothing owed stays at nothing', VE.loanStep(0, 0.07, 100), { owed: 0, interest: 0 });
+  const po = VE.payoff(10220, 0.07, 350, 990, '2027-03');
+  eq('$10,220 at $350 + $990 a month: gone in Oct 2027', [po.months, po.month], [8, '2027-10']);
+  eq('a payment smaller than the interest never finishes', VE.payoff(12000, 0.07, 50).never, true);
+
+  group = 'Looking ahead: 48 months against a separate model';
+  const GOLD = {"loan":{"rows":[["2027-02",370.0,380,500,150,200,1500.0,0.0,0.0,0.0,10220.0],["2027-03",1410.0,200,250,150,0,990.0,0.0,0.0,0.0,8939.62],["2027-04",1410.0,200,250,150,0,990.0,0.0,0.0,0.0,7651.76],["2027-05",1410.0,200,250,150,0,990.0,0.0,0.0,0.0,6356.4],["2027-06",1410.0,200,250,150,0,990.0,0.0,0.0,0.0,5053.48],["2027-07",1410.0,200,250,150,0,990.0,0.0,0.0,0.0,3742.96],["2027-08",1410.0,200,250,150,0,990.0,0.0,0.0,0.0,2424.79],["2027-09",1410.0,200,250,150,0,990.0,0.0,0.0,0.0,1098.94],["2027-10",1410.0,200,250,150,0,755.35,234.65,0.0,0.0,0],["2027-11",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2027-12",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2028-01",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2028-02",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2028-03",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2028-04",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2028-05",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2028-06",1060.0,200,250,150,0,0,300.0,780.0,260.0,0],["2028-07",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2028-08",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2028-09",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2028-10",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2028-11",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2028-12",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2029-01",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2029-02",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2029-03",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2029-04",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2029-05",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2029-06",1060.0,200,250,150,0,0,300.0,780.0,260.0,0],["2029-07",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2029-08",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2029-09",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2029-10",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2029-11",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2029-12",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2030-01",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2030-02",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2030-03",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2030-04",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2030-05",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0],["2030-06",1060.0,200,250,150,0,0,300.0,780.0,260.0,0],["2030-07",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2030-08",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2030-09",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2030-10",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2030-11",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2030-12",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2031-01",1060.0,200,250,150,0,0,1340.0,0.0,0.0,0]],"payoff":"2027-10","interest":335.35,"mmd48":55909.0,"rothByYear":{"2027":2914.65,"2028":7000.0,"2029":7000.0,"2030":7000.0,"2031":1340.0}},"roth":{"rows":[["2027-02",370.0,380,500,150,200,0.0,1500.0,0.0,0.0,11720.0],["2027-03",1410.0,200,250,150,0,0.0,990.0,0.0,0.0,11438.37],["2027-04",1410.0,200,250,150,0,0.0,990.0,0.0,0.0,11155.09],["2027-05",1410.0,200,250,150,0,0.0,990.0,0.0,0.0,10870.16],["2027-06",1410.0,200,250,150,0,0.0,990.0,0.0,0.0,10583.57],["2027-07",1410.0,200,250,150,0,0.0,990.0,0.0,0.0,10295.31],["2027-08",1410.0,200,250,150,0,440.0,550.0,0.0,0.0,9565.36],["2027-09",1410.0,200,250,150,0,990.0,0,0.0,0.0,8281.16],["2027-10",1410.0,200,250,150,0,990.0,0,0.0,0.0,6989.47],["2027-11",1410.0,200,250,150,0,990.0,0,0.0,0.0,5690.24],["2027-12",1410.0,200,250,150,0,990.0,0,0.0,0.0,4383.43],["2028-01",1410.0,200,250,150,0,0.0,990.0,0.0,0.0,4059.0],["2028-02",1410.0,200,250,150,0,0.0,990.0,0.0,0.0,3732.68],["2028-03",1410.0,200,250,150,0,0.0,990.0,0.0,0.0,3404.46],["2028-04",1410.0,200,250,150,0,0.0,990.0,0.0,0.0,3074.32],["2028-05",1410.0,200,250,150,0,0.0,990.0,0.0,0.0,2742.25],["2028-06",1410.0,200,250,150,0,0.0,990.0,0.0,0.0,2408.25],["2028-07",1410.0,200,250,150,0,0.0,990.0,0.0,0.0,2072.29],["2028-08",1410.0,200,250,150,0,920.0,70.0,0.0,0.0,814.38],["2028-09",1410.0,200,250,150,0,469.13,0,390.65,130.22,0],["2028-10",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2028-11",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2028-12",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2029-01",1060.0,200,250,150,0,0.0,1340.0,0.0,0.0,0],["2029-02",1060.0,200,250,150,0,0.0,1340.0,0.0,0.0,0],["2029-03",1060.0,200,250,150,0,0.0,1340.0,0.0,0.0,0],["2029-04",1060.0,200,250,150,0,0.0,1340.0,0.0,0.0,0],["2029-05",1060.0,200,250,150,0,0.0,1340.0,0.0,0.0,0],["2029-06",1060.0,200,250,150,0,0,300.0,780.0,260.0,0],["2029-07",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2029-08",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2029-09",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2029-10",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2029-11",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2029-12",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2030-01",1060.0,200,250,150,0,0.0,1340.0,0.0,0.0,0],["2030-02",1060.0,200,250,150,0,0.0,1340.0,0.0,0.0,0],["2030-03",1060.0,200,250,150,0,0.0,1340.0,0.0,0.0,0],["2030-04",1060.0,200,250,150,0,0.0,1340.0,0.0,0.0,0],["2030-05",1060.0,200,250,150,0,0.0,1340.0,0.0,0.0,0],["2030-06",1060.0,200,250,150,0,0,300.0,780.0,260.0,0],["2030-07",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2030-08",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2030-09",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2030-10",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2030-11",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2030-12",1060.0,200,250,150,0,0,0,1005.0,335.0,0],["2031-01",1060.0,200,250,150,0,0.0,1340.0,0.0,0.0,0]],"payoff":"2028-09","interest":789.13,"mmd48":57045.17,"rothByYear":{"2027":7000.0,"2028":7000.0,"2029":7000.0,"2030":7000.0,"2031":1340.0}}};
+  for (const first of ['loan', 'roth']) {
+    const rows = VE.project(START, S, { months: 48, first });
+    const got = rows.map(r => [r.month, ...JARS.map(j => r2(r.split.give[j])), r2(r.split.extraLoan), r2(r.split.roth), r2(r.split.invest), r2(r.split.fun), r2(r.owed)]);
+    const bad = got.map((g, i) => same(g, GOLD[first].rows[i]) ? null : i).filter(x => x !== null);
+    eq(first + ' first: all 48 months match (every transfer and the loan)', bad.length ? got[bad[0]] : 'all match', bad.length ? GOLD[first].rows[bad[0]] : 'all match');
+    const sm = VE.summarize(rows);
+    eq(first + ' first: loan gone ' + GOLD[first].payoff, sm.payoff, GOLD[first].payoff);
+    near(first + ' first: interest paid', sm.interest, GOLD[first].interest, 0.01);
+    near(first + ' first: money minus debt after 48 months', rows[47].mmd, GOLD[first].mmd48, 0.01);
+    const byYear = {}; rows.forEach(r => { const y = String(VE.yearOf(r.month)); byYear[y] = r2((byYear[y] || 0) + r.split.roth); });
+    eq(first + ' first: Roth by calendar year, never over $7,000', byYear, GOLD[first].rothByYear);
+    yes(first + ' first: every month adds up', rows.every(r => Math.abs(r.split.total - r.income) < 1e-6));
+  }
+  const ev = [{ kind: 'income', start: '2027-06', amount: 3400, bills: -100, on: true }, { kind: 'once', start: '2027-09', amount: -700, on: true }, { kind: 'bills', start: '2028-01', end: '2028-03', amount: 80, on: true }, { kind: 'once', start: '2027-05', amount: 999, on: false }];
+  eq('events: income before, after, and in a one-off month', ['2027-05', '2027-06', '2027-09'].map(m => VE.incomeFor(m, 3000, ev)), [3000, 3400, 2700]);
+  eq('events: bills change while active, and an event that’s off counts for nothing', ['2027-05', '2027-06', '2028-02', '2028-04'].map(m => VE.billsChange(m, ev)), [0, -100, -20, -100]);
+  const evRows = VE.project(START, S, { months: 24, events: ev });
+  eq('events: the projection uses them', [evRows[4].income, evRows[4].split.billsDue, evRows[7].income], [3400, 1300 - 100, 2700]);
+
+  group = 'Pay';
+  const st = VE.stub('2027-01-15', '2026-12-28', '2027-01-10');
+  eq('a stub paid Jan 15 for Dec 28 – Jan 10: every 14 days, 5 days later', st, { payDate: '2027-01-15', every: 14, lag: 5 });
+  yes('a 10-day period is refused', VE.stub('2027-01-15', '2027-01-01', '2027-01-10').error);
+  yes('paid before the period ends is refused', VE.stub('2027-01-05', '2026-12-28', '2027-01-10').error);
+  eq('next payday after Feb 1 is Feb 12', VE.nextPayday(st, '2027-02-01'), '2027-02-12');
+  eq('on a payday, the next one is two weeks on', VE.nextPayday(st, '2027-02-12'), '2027-02-26');
+  eq('the Feb 12 check pays Jan 25 – Feb 7', VE.periodFor(st, '2027-02-12'), { from: '2027-01-25', to: '2027-02-07' });
+  eq('paydays after Feb 1, up to Mar 1', VE.paydaysBetween(st, '2027-02-01', '2027-03-01'), ['2027-02-12', '2027-02-26']);
+  const rate = VE.payRate([{ date: '2027-01-15', net: 1300, hours: 70 }, { date: '2027-01-01', net: 900, hours: 50 }, { date: '2027-01-29', net: 1500, hours: 76 }, { date: '2027-02-12', net: 1400, hours: 72 }, { date: '2027-02-13', net: 20, hours: 0 }]);
+  near('$/hr = the last 3 checks: $4,200 ÷ 218 hr', rate.rate, 4200 / 218, 1e-9);
+  eq('no checks: no rate yet', VE.payRate([]), null);
+  const nc = VE.nextCheck(st, [{ date: '2027-01-25', hours: 6 }, { date: '2027-02-02', hours: 7.5 }, { date: '2027-02-08', hours: 9 }], 20, 35, '2027-02-03', 2);
+  eq('next check: only its own period, plus the running timer', [nc.pay, nc.logged, nc.full], ['2027-02-12', 15.5, 70]);
+  eq('…estimate uses a full period until you pass it', [nc.soFar, nc.estimate], [310, 1400]);
+
+  group = 'Hours a week (Freedom)';
+  const fr = VE.freedom(S, 20, 12000);
+  eq('needs: set-aside + gas + misc + personal = $2,010', [fr.needs, fr.parts], [2010, { bills: 1410, gas: 200, misc: 250, personal: 150 }]);
+  near('at $20/hr: $2,010 ÷ 20 ÷ 4.33 = 23.2 hr/wk', fr.hours, 2010 / 20 / (52 / 12), 1e-9);
+  near('once the loan is gone: 19.2 hr/wk', fr.afterLoan, 1660 / 20 / (52 / 12), 1e-9);
+  near('no loan owed: the payment isn’t counted', VE.freedom(S, 20, 0).needs, 1660, 1e-9);
+
+  group = 'Personal';
+  const wp = VE.wishPlan({ price: 600, saved: 100, by: '2027-07' }, '2027-02');
+  eq('$600 by July with $100 saved: 6 refills of $83.33', [wp.months, r2(wp.monthly), wp.done], [6, 83.33, false]);
+  eq('a wish date in the past still counts this month', VE.wishPlan({ price: 100, saved: 0, by: '2026-01' }, '2027-02').months, 1);
+  eq('saved enough: done', VE.wishPlan({ price: 100, saved: 100, by: '2027-07' }, '2027-02').done, true);
+  const rf = VE.refill({ jars: { personal: { amount: 150 } }, subs: [{ amount: 10 }, { amount: 5 }] }, [{ price: 600, saved: 100, by: '2027-07' }, { price: 50, saved: 60, by: '2027-03' }], '2027-02');
+  eq('refill $150: $15 subscriptions, $83.33 wishes, $51.67 free', [rf.subs, r2(rf.toWishes), r2(rf.free)], [15, 83.33, 51.67]);
+  eq('fun money a day: $76 over 19 days', VE.perDay(76, '2027-02-10', '2027-03-01'), { days: 19, perDay: 4 });
+
+  group = 'Between Dam Days (the screens’ estimates)';
+  const d0 = derive(S, '2027-01-20');
+  eq('next Dam Day Feb 1, in 12 days', [d0.next.month, d0.next.date, d0.next.days, d0.next.due], ['2027-02', '2027-02-01', 12, false]);
+  near('$/hr before any check: $3,000 ÷ (35 × 4.33) = $19.78', d0.rate.rate, 3000 / (35 * 52 / 12), 1e-9);
+  eq('lake: $900 + the Jan 29 check + $100 other', [d0.lake.checks.map(c => c.date), r2(d0.lake.est)], [['2027-01-29'], r2(900 + d0.rate.rate * 70 + 100)]);
+  eq('before any split, the jars are taken as typed', d0.at.bal, START.bal);
+  const dDue = derive(S, '2027-02-01');
+  eq('on Dam Day the old check-in still gets the check that landed since', r2(dDue.lake.est), r2(d0.lake.est));
+  const dLate = derive(S, '2027-02-13');
+  eq('a late Dam Day counts the pay that landed since, too', dLate.lake.checks.map(c => c.date), ['2027-01-29', '2027-02-12']);
+  // Close February the way the Dam Day screen does, then look at March
+  const S2 = JSON.parse(JSON.stringify(S));
+  const sp = VE.split({ month: '2027-02', income: 3100, bal: START.bal, owed: 12000, rothUsed: 0, iou: 0 }, S2, plan);
+  const after = {}; JARS.forEach(j => { after[j] = START.bal[j] + (j === 'personal' ? sp.toPersonal : sp.give[j]); });
+  S2.months.push({ month: '2027-02', closed: '2027-02-01', income: 3100, before: { income: 3100, ...START.bal }, owed: 12000, rothUsed: 0, iou: 0, plan: { give: sp.give, toPersonal: sp.toPersonal, billsDue: sp.billsDue, billsTarget: sp.billsTarget, carDue: sp.carDue, extraLoan: sp.extraLoan, roth: sp.roth, invest: sp.invest, fun: sp.fun, short: sp.short, income: sp.income }, done: {}, after, check: null, mismatch: false });
+  JARS.forEach(j => S2.balances.push({ date: '2027-02-01', jar: j, value: after[j], t: 2, ref: '2027-02' }));
+  S2.balances.push({ date: '2027-02-01', jar: 'income', value: 0, t: 2, ref: '2027-02' });
+  S2.loan.owed = 10220;
+  const d1 = derive(S2, '2027-02-02');
+  eq('after the split, Valley expects Feb’s bills and spending to come out first', d1.at.bal, { bills: 1570 - 1300, gas: 300, misc: 550, personal: 80, vault: 5000 });
+  eq('…so March’s preview is the steady month: $1,410 / $200 / $250 / $150 / $0', JARS.map(j => r2(d1.preview.give[j])), [1410, 200, 250, 150, 0]);
+  eq('…from two checks and the other money', [d1.lake.checks.map(c => c.date), r2(d1.lake.est)], [['2027-02-12', '2027-02-26'], r2(2 * d1.rate.rate * 70 + 100)]);
+  const S3 = JSON.parse(JSON.stringify(S2));
+  S3.balances.push({ date: '2027-02-20', jar: 'gas', value: 410, t: 3, checkin: true });
+  eq('a check-in since the split is used as typed', derive(S3, '2027-02-21').at.bal.gas, 410);
+  const S4 = JSON.parse(JSON.stringify(S2));
+  JARS.forEach(j => S4.balances.push({ date: '2027-02-01', jar: j, value: after[j], t: 3, checkin: true, ref: '2027-02' }));
+  eq('a double-check right after the split still counts as before the month’s spending', derive(S4, '2027-02-02').at.bal.bills, 270);
+
+  group = 'Random checks (the same 400 cases every time)';
+  let seed = 20261015;
+  const rnd = () => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+  const R = (a, b) => a + rnd() * (b - a), I = (a, b) => Math.floor(R(a, b + 1)), pick = a => a[I(0, a.length - 1)];
+  const fails = {}; const prop = (name, ok, info) => { if (!(name in fails)) fails[name] = null; if (!ok && fails[name] === null) fails[name] = info === undefined ? 'failed' : info; };
+  const eps = 1e-4;
+  for (let n = 0; n < 400; n++) {
+    const bills = [{ id: 'a', name: 'A', amounts: fill(R(0, 2000)) }, { id: 'l', name: 'L', loan: true, amounts: fill(0) }];
+    if (rnd() < .7) { const big = fill(0); big[I(0, 11)] = R(0, 3000); bills.push({ id: 'b', name: 'B', amounts: big }); }
+    const s = { jars: { bills: { cushion: R(0, 300) }, gas: { cap: R(0, 2000), spend: R(0, 500) }, misc: { cap: R(0, 2000), spend: R(0, 400) }, personal: { amount: R(0, 500) }, vault: { cap: R(0, 20000) } },
+      bills, loan: { owed: R(0, 30000), apr: R(0, .25), payment: R(0, 900) }, extra: { first: pick(['loan', 'roth']), rothLimit: pick([0, 7000, 7500]), investShare: R(0, 1), growth: R(-.05, .12) }, income: { monthly: R(0, 9000), hoursPerWeek: R(0, 60) } };
+    const pl = VE.billPlan(s.bills, s.loan, s.jars.bills.cushion);
+    prop('the plan’s lowest point is always the cushion', Math.abs(Math.min(...pl.left) - s.jars.bills.cushion) < 1e-6);
+    const inp = { month: VE.ym(I(2026, 2035), I(0, 11)), income: rnd() < .05 ? 0 : R(0, 12000), bal: { bills: R(-500, 6000), gas: R(0, 3000), misc: R(0, 3000), personal: R(0, 1500), vault: R(0, 25000) }, owed: rnd() < .2 ? 0 : R(0, 30000), rothUsed: R(0, 8000), iou: rnd() < .2 ? R(0, 800) : 0 };
+    const x = VE.split(inp, s, pl);
+    prop('every transfer adds up to the income', Math.abs(x.total - x.income) < 1e-6, [x.total, x.income]);
+    prop('no transfer is ever negative', [...JARS.map(j => x.give[j]), x.extraLoan, x.roth, x.invest, x.fun].every(v => v >= -eps));
+    prop('no jar gets more than it needs', JARS.every(j => x.give[j] <= x.need[j] + eps));
+    let starved = false, order = true;
+    for (const j of JARS) { if (starved && x.give[j] > eps) order = false; if (x.give[j] < x.need[j] - eps) starved = true; }
+    prop('top to bottom: once a jar comes up short, the ones below get nothing', order);
+    prop('there’s only a leftover when nothing is short', x.short < eps || x.left < eps);
+    prop('the Roth never goes over the year’s room', x.roth <= x.rothRoom + eps);
+    prop('extra never pays more than is owed', x.extraLoan <= x.owedAfterPay + eps);
+    prop('the switch order holds', s.extra.first === 'loan' ? (x.roth <= eps || Math.abs(x.extraLoan - x.owedAfterPay) < 1e-6) : (x.extraLoan <= eps || Math.abs(x.roth - x.rothRoom) < 1e-6));
+    if (n < 120) {
+      const rows = VE.project({ month: inp.month, bal: inp.bal, owed: inp.owed, rothUsed: {} }, s, { months: 36 });
+      const by = {}; rows.forEach(r => { by[VE.yearOf(r.month)] = (by[VE.yearOf(r.month)] || 0) + r.split.roth; });
+      prop('over 3 years: the Roth stays under the limit every calendar year', Object.values(by).every(v => v <= s.extra.rothLimit + 1e-6), by);
+      prop('over 3 years: every month adds up', rows.every(r => Math.abs(r.split.total - r.split.income) < 1e-6));
+      prop('over 3 years: the loan never goes below $0', rows.every(r => r.owed >= 0));
+    }
+  }
+  for (const [name, info] of Object.entries(fails)) results.push({ group, name, ok: info === null, got: info, want: 'no failures' });
+
+  // --- Show results
+  const bad = results.filter(x => !x.ok);
+  document.getElementById('sum').className = bad.length ? 'bad' : 'ok';
+  document.getElementById('sum').textContent = bad.length ? bad.length + ' of ' + results.length + ' failed' : 'All ' + results.length + ' checks pass';
+  const groups = [...new Set(results.map(x => x.group))];
+  document.getElementById('out').innerHTML = groups.map(g => '<h2>' + g + '</h2><ul>' + results.filter(x => x.group === g).map(x => '<li class="' + (x.ok ? 'ok' : 'bad') + '">' + (x.ok ? '✓ ' : '✗ ') + x.name +
+    (x.ok ? '' : ' <code>got ' + JSON.stringify(x.got) + ', want ' + JSON.stringify(x.want) + '</code>') + '</li>').join('') + '</ul>').join('');
+})();
+</script>
+</body>
+</html>
