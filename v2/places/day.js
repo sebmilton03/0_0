@@ -10,7 +10,7 @@ const COUNT = ['Nothing', 'One thing', 'Two things', 'Three things', 'Four thing
 const DAYS1 = ['M', 'T', 'W', 'T', 'F', 'S', 'S'], DAYN = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 
 export function render(ctx) {
-  const { state: s, m } = ctx, chain = cues(s, m.day, ctx.focus && ctx.focus(m.day)), p = parked(s, m.day), wk = weekHours(s, m.day);
+  const { state: s, m } = ctx, chain = cues(s, m.day, ctx.focus(m.day), ctx.morningHabits(m.day)), p = parked(s, m.day), wk = weekHours(s, m.day);
   const chainHTML = chain.length
     ? `<div style="position:relative;margin-top:8px;padding-left:18px;border-left:2px solid rgba(255,255,255,.12);margin-left:4px">${chain.map(cueHTML).join('')}</div>`
     : `<div class="empty">Nothing here yet. That’s a fine place to start.<button class="link" data-act="plan">+ plan your week</button></div>`;

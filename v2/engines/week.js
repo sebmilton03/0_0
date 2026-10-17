@@ -72,9 +72,11 @@ export const span = b => ampm(b.from) + ' to ' + ampm(b.to);
  * Today as a chain of cues, in order: the morning, each block, then wind down.
  * Each cue: { key, title, dot, right, lines: [{ item, text, done }] }. Empty cues are left out.
  */
-export function cues(s, date, focus = null) {
+export function cues(s, date, focus = null, morningHabits = []) {
   const set = s.settings || {}, out = [];
-  const morning = (set.morning || []).map((t, i) => ({ item: 'm' + i, text: t, done: done(s, date, 'm' + i) }));
+  // Habit lines use 'h:<id>', the same item Grow ticks, so ticking either place counts once.
+  const morning = [...morningHabits.map(h => ({ item: 'h:' + h.id, text: h.text, done: done(s, date, 'h:' + h.id) })),
+    ...(set.morning || []).map((t, i) => ({ item: 'm' + i, text: t, done: done(s, date, 'm' + i) }))];
   if (morning.length) out.push({ key: 'morning', title: 'Morning', dot: '#9fe6b8', lines: morning });
   for (const b of blocksOn(s, date)) {
     const item = 'b:' + b.id;
@@ -82,7 +84,7 @@ export function cues(s, date, focus = null) {
       right: b.kind === 'work' ? fmtHours(b.hours) + ' hr' : '', lines: [{ item, text: span(b) + (b.kind === 'work' ? '' : ''), done: done(s, date, item) }] });
   }
   const evening = (set.evening || []).map((t, i) => ({ item: 'e' + i, text: t, done: done(s, date, 'e' + i) }));
-  if (focus) evening.unshift({ item: 'f:' + focus.id, text: focus.text, done: done(s, date, 'f:' + focus.id) });
+  if (focus) evening.unshift({ item: 'h:' + focus.id, text: focus.text, done: done(s, date, 'h:' + focus.id) });
   if (evening.length) out.push({ key: 'wind', title: focus ? 'Wind down · your focus habit' : 'Wind down', dot: '#ffb3dc', right: focus ? focus.right || '' : '', lines: evening });
   return out;
 }

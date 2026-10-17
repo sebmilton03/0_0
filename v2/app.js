@@ -11,8 +11,10 @@ import { $, esc, buzz, stars, openSheet, closeSheet, sheetOpen, toast, hideToast
 import * as home from './places/home.js';
 import * as day from './places/day.js';
 import * as moneyPlace from './places/money.js';
+import * as grow from './places/grow.js';
+import { focusOf, byStatus, cueLine } from './engines/steps.js';
 
-export const PLACES = { home, day, money: moneyPlace };
+export const PLACES = { home, day, money: moneyPlace, grow };
 export const TABS = ['home', 'day', 'money', 'grow', 'study'];
 
 let log, store, state, awake = false, face = '0_0', current = 'home';
@@ -48,7 +50,9 @@ function ctx() {
     state, m, log, store, extra: extraFor(m.day),
     write, render, go, breathe, places: Object.keys(PLACES),
     refresh: async () => { state = await store.state(); render(); },
-    focus: () => null,   // the focus habit's line for tonight's cue (Grow fills this in)
+    // Grow's lines for Day's chain: the focus habit at wind-down, morning habits in the morning.
+    focus: day => { const f = focusOf(state); return f && f.cue !== 'morning' ? cueLine(state, f, day) : null; },
+    morningHabits: day => [focusOf(state), ...byStatus(state, 'along')].filter(h => h && h.cue === 'morning').map(h => cueLine(state, h, day)),
     face: f => { face = f; }, faceNow: () => face,
     wake: () => { awake = true; render(); },
   };

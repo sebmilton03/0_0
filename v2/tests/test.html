@@ -405,6 +405,27 @@ async function run() {
     eq('the trade: one more shift a week pays the loan off sooner', t.sooner > 0 && t.studyLost === 10, true);
   }
 
+  // ---------------------------------------------------------------- grow
+  group = 'Grow: one habit at a time';
+  {
+    const G = await import('../engines/steps.js');
+    const base = replay([ev('habit.add', { id: 's', ...G.SLEEP_PRESET, status: 'focus', date: '2026-10-16' })], HOME.reducers, HOME.init);
+    const h = base.habits.s;
+    eq('a new focus starts at step 1: phone outside the bedroom, 14 nights', [G.progress(base, h, '2026-10-16').step.text, G.progress(base, h, '2026-10-16').n], ['Phone charges outside the bedroom', 14]);
+    const nights = Object.fromEntries(['2026-10-16', '2026-10-17', '2026-10-19'].map(d => [d, { 'h:s': true }]));
+    const p = G.progress({ ...base, cues: nights }, h, '2026-10-20');
+    eq('a missed night does nothing: 3 nights still count as 3', p.count, 3);
+    eq('ticking it in Day’s chain counts in Grow too (it’s the same line)', W.cues({ ...base, cues: nights }, '2026-10-16', G.cueLine(base, h, '2026-10-16')).pop().lines[0].done, true);
+    const two = replay([ev('habit.add', { id: 's', ...G.SLEEP_PRESET, status: 'focus', date: '2026-10-16' }), ev('habit.reached', { id: 's', date: '2026-10-30' })], HOME.reducers, HOME.init);
+    eq('"I reached it" moves to step 2, counting from that day', [G.progress(two, two.habits.s, '2026-10-30').step.text, G.progress({ ...two, cues: nights }, two.habits.s, '2026-10-30').count], ['Lights out by 11:30', 0]);
+    const fin = replay([ev('habit.add', { id: 's', ...G.SLEEP_PRESET, status: 'focus', date: '2026-10-16' }), ev('habit.reached', { id: 's', date: '2026-10-30' }), ev('habit.reached', { id: 's', date: '2026-11-30' }), ev('habit.reached', { id: 's', date: '2027-01-01' })], HOME.reducers, HOME.init);
+    eq('after the last step, it’s kept, out of sight', fin.habits.s.status, 'kept');
+    const swap = replay([ev('habit.add', { id: 's', ...G.SLEEP_PRESET, status: 'focus', date: '2026-10-16' }), ev('habit.add', { id: 'g', name: 'Gym', steps: [{ text: 'Gym once a week', n: 4 }], status: 'backburner', date: '2026-10-16' }), ev('habit.status', { id: 'g', status: 'focus', date: '2026-10-20' })], HOME.reducers, HOME.init);
+    eq('only one focus: a new focus moves the old one to the back burner', [swap.habits.g.status, swap.habits.s.status], ['focus', 'backburner']);
+    const road = replay([ev('stop.add', { id: 'a', text: 'Vault full' }), ev('stop.add', { id: 'b', text: 'Loan gone' }), ev('stop.reached', { id: 'a', date: '2026-12-31' })], HOME.reducers, HOME.init);
+    eq('the road keeps its stops in order, and remembers when one is reached', road.road.map(x => x.text + (x.reached ? ' ✓' : '')), ['Vault full ✓', 'Loan gone']);
+  }
+
 }
 
 const progress = setInterval(() => { document.getElementById('sum').textContent = 'Running… ' + group + ' (' + results.length + ' so far)'; }, 200);

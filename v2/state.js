@@ -3,10 +3,11 @@
 
 import { EMPTY as EMPTY_MONEY } from './engines/money.js';
 const M = s => s.money || EMPTY_MONEY;
+const burner = hs => Object.fromEntries(Object.entries(hs || {}).map(([k, h]) => [k, h.status === 'focus' ? { ...h, status: 'backburner' } : h]));
 
 export const APP = {
   init: { settings: {}, places: [], tabs: [], ticks: {}, checkins: {}, sleep: {}, days: {}, sayings: [], archived: null,
-    blocks: {}, once: [], skips: [], cues: {}, parked: [] },
+    blocks: {}, once: [], skips: [], cues: {}, parked: [], habits: {}, road: [] },
   reducers: {
     // { name, wake, windDown, payday, place: { lat, lon, label }, words }
     settings: (s, d) => ({ ...s, settings: { ...s.settings, ...d } }),
@@ -53,6 +54,19 @@ export const APP = {
       balances: [...m.balances, ...Object.entries(d.after || {}).map(([jar, value]) => ({ date: d.date, jar, value: +value }))] } }; },
     spent: (s, d) => { const m = M(s); return { ...s, money: { ...m, spent: [...m.spent, { date: d.date, amount: +d.amount, note: d.note || '' }] } }; },
     borrow: (s, d) => { const m = M(s); return { ...s, money: { ...m, ious: [...m.ious, { date: d.date, from: d.from, amount: +d.amount }] } }; },
+    // Grow. A habit: { id, name, cue: 'morning' | 'wind', why, steps: [{ text, n }], status: 'focus' | 'backburner' | 'kept', date }.
+    // Only one focus at a time: making one the focus moves the old focus to the back burner.
+    'habit.add': (s, d) => ({ ...s, habits: { ...(d.status === 'focus' ? burner(s.habits) : s.habits),
+      [d.id]: { id: d.id, name: d.name, cue: d.cue || 'wind', why: d.why || '', steps: d.steps, status: d.status || 'backburner', step: 0, stepFrom: d.date } } }),
+    'habit.status': (s, d) => { const h = s.habits[d.id]; if (!h) return s;
+      return { ...s, habits: { ...(d.status === 'focus' ? burner(s.habits) : s.habits), [d.id]: { ...h, status: d.status, ...(d.status === 'focus' && d.date ? { stepFrom: h.stepFrom || d.date } : {}) } } }; },
+    // "I reached it": the next step starts today. After the last step, the habit is kept.
+    'habit.reached': (s, d) => { const h = s.habits[d.id]; if (!h) return s; const last = h.step >= h.steps.length - 1;
+      return { ...s, habits: { ...s.habits, [d.id]: last ? { ...h, status: 'kept', keptOn: d.date } : { ...h, step: h.step + 1, stepFrom: d.date } } }; },
+    // Goals as a road: stops you reach, in order. { id, text } then { id, date } when reached.
+    'stop.add': (s, d) => ({ ...s, road: [...s.road.filter(x => x.id !== d.id), { id: d.id, text: d.text }] }),
+    'stop.reached': (s, d) => ({ ...s, road: s.road.map(x => (x.id === d.id ? { ...x, reached: d.date } : x)) }),
+    'stop.remove': (s, d) => ({ ...s, road: s.road.filter(x => x.id !== d.id) }),
     // A copy of what the v1 apps had saved, taken once, quietly. Kept so nothing is lost; places bring in what they need.
     'v1-archive': (s, d, e) => ({ ...s, archived: { at: e.at, id: e.id, keys: Object.keys(d.keys || {}) } }),
   },

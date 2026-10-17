@@ -144,7 +144,8 @@ function tomorrow(s, day) {
 function night(ctx) {
   const { state: s, m } = ctx;
   ctx.face('-_-ᶻ');
-  const one = s.places.includes('sleep') ? 'Phone sleeps outside the bedroom tonight.' : 'Put the day down. It’ll keep.';
+  const f = ctx.focus(m.day);
+  const one = f ? f.text.replace(/\.$/, '') + ' tonight.' : s.places.includes('sleep') ? 'Phone sleeps outside the bedroom tonight.' : 'Put the day down. It’ll keep.';
   return { sky: 'winddown', bare: true, html:
     `<div class="wd"><div class="when">${esc(clock(m.now))} · wind down</div><div class="one">${one}</div>` +
     (() => { const t = tomorrowLine(s, m.day); return t ? `<div class="tom">Tomorrow starts with<br><span>${t.map(esc).join('</span>, then <span>')}</span>.</div>` : ''; })() +
@@ -180,6 +181,7 @@ export function pillarSheet(ctx, key) {
   openSheet(`<div class="lbl">${P.name}</div><div class="say">${esc(key === 'sleep' ? sleepFeel(s, days) : FEEL[key](p))}</div>` +
     `<p class="fine" style="margin-top:6px">${esc(p.detail)}</p>${bars}` +
     (acts ? `<div class="opts" style="margin-top:14px">${acts}</div>` : '') +
+    (key === 'sleep' && ctx.focus(m.day) ? (f => `<div class="next" style="margin-top:14px"><small>Tonight’s one thing</small><b style="font-size:16px">${esc(f.text)}</b><p>Your sleep habit${f.right ? ' · ' + esc(f.right) + ' nights' : ''}</p></div>`)(ctx.focus(m.day)) : '') +
     `<div class="calm" style="margin-top:14px"><i>♡</i>${esc(P.why)}</div>` +
     `<p class="fine" style="margin-top:12px">${esc(P.question)} ${esc(P.feed)}</p>` +
     (key === 'sleep' ? '' : `<details style="margin-top:6px"><summary class="fine center link" style="list-style:none;cursor:pointer">what “${esc(words.good || P.good)}” means to me · edit</summary>` +
