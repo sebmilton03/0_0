@@ -14,10 +14,11 @@ import * as moneyPlace from './places/money.js';
 import * as grow from './places/grow.js';
 import * as study from './places/study.js';
 import * as tidePlace from './places/tide.js';
+import * as long from './places/long.js';
 import { focusOf, byStatus, cueLine } from './engines/steps.js';
 import { daysBetween } from './engines/sebdate.js';
 
-export const PLACES = { home, day, money: moneyPlace, grow, study };
+export const PLACES = { home, day, money: moneyPlace, grow, study, long };   // long view opens from Grow; never in the bar
 // Low tide's taps live with Home's screens; it isn't a tab.
 const EXTRA_ACTIONS = [tidePlace.actions];
 const memo = {};                        // things shown but never saved (missed shifts on the way back)
@@ -55,7 +56,7 @@ function ctx() {
   const m = moment();
   return {
     state, m, log, store, extra: extraFor(m.day),
-    write, render, go, breathe, places: Object.keys(PLACES),
+    write, render, go, breathe, places: TABS.filter(t => PLACES[t]),
     refresh: async () => { state = await store.state(); render(); },
     memo,
     away: () => (welcomed || !lastOpen ? 0 : daysBetween(lastOpen, m.day)),

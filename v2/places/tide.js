@@ -9,6 +9,7 @@ import { moneyView } from './money.js';
 import { dateTop } from './home.js';
 import { parked } from '../engines/week.js';
 import { daysBetween } from '../engines/sebdate.js';
+import { ready as readyLetters } from '../engines/long.js';
 
 const basics = new Set();   // ate something, some water, rest: in memory only, never written anywhere
 const waves = () => `<svg style="position:fixed;left:0;right:0;bottom:0;width:100%;height:240px;z-index:-1" viewBox="0 0 390 240" preserveAspectRatio="none">${[0, 1, 2].map(k => `<path d="M0 ${90 + k * 42} C 65 ${66 + k * 42}, 130 ${112 + k * 42}, 195 ${90 + k * 42} S 325 ${66 + k * 42}, 390 ${90 + k * 42} L390 240 L0 240Z" fill="rgba(150,180,255,${(0.05 + k * 0.03).toFixed(2)})"/>`).join('')}</svg>`;
@@ -41,6 +42,7 @@ export function lowTide(ctx) {
     `<div class="calm"><i>☾</i>Habits are paused. Nothing breaks.</div>` +
     `<button class="calm" data-act="apartment"><i>⌂</i>The apartment can wait.<span class="go">›</span></button>` +
     `<button class="calm" data-act="person" style="background:rgba(255,214,170,.1);border:1px solid rgba(255,214,170,.3)"><i>♡</i>Text your person<span class="go" style="color:#ffd59a">›</span></button>` +
+    readyLetters(s, m.day).filter(l => l.opens.kind === 'tide').map(l => `<button class="calm" data-act="openLetter" data-id="${l.id}" style="background:rgba(243,233,214,.1);border:1px solid rgba(243,233,214,.3)"><i>✉</i>A letter from you, for a day like this<span class="go">›</span></button>`).join('') +
     `<p class="fine center" style="margin-top:12px">If it ever gets really heavy, call or text 988.</p>` +
     `<p class="fine center" style="margin-top:14px">How’s the tide today? <button class="link" data-act="tideOff">it’s coming back in</button></p>` };
 }

@@ -471,6 +471,32 @@ async function run() {
     eq('named months stack up into a story', T.named(n).map(([m, x]) => m + ': ' + x.name), ['2026-10: the month 0_0 began']);
   }
 
+  // ---------------------------------------------------------------- the long view
+  group = 'Delight and the long view';
+  {
+    const L = await import('../engines/long.js');
+    const s = replay([
+      ev('stop.add', { id: 'v', text: 'Vault full' }), ev('stop.add', { id: 'o', text: 'Transfer to OSU' }),
+      ev('letter.add', { id: 'a', title: 'When the vault is full', text: 'made-up words', opens: { kind: 'stop', value: 'v' } }),
+      ev('letter.add', { id: 'b', title: 'In Lithuania', text: 'made-up words', opens: { kind: 'date', value: '2027-09-20' } }),
+      ev('letter.add', { id: 'c', title: 'On a rough day', text: 'made-up words', opens: { kind: 'tide' } }),
+    ], HOME.reducers, HOME.init);
+    eq('sealed letters can’t open early', L.ready(s, '2026-10-21').map(l => l.id), []);
+    const reached = replay([ev('stop.reached', { id: 'v', date: '2026-12-31' })], HOME.reducers, s);
+    eq('reaching the stop opens its letter', L.ready(reached, '2026-12-31').map(l => l.id), ['a']);
+    eq('a dated letter opens on its day', L.ready(s, '2027-09-20').map(l => l.id), ['b']);
+    eq('the rough-day letter opens in low tide', L.ready(replay([ev('tide.on', { date: '2026-10-22' })], HOME.reducers, s), '2026-10-22').map(l => l.id), ['c']);
+    eq('an opened letter stays opened', L.ready(replay([ev('letter.open', { id: 'b', date: '2027-09-20' })], HOME.reducers, s), '2027-09-21').map(l => l.id), []);
+    const sky = L.starsOf(reached);
+    eq('your sky: a reached stop is a star; the road ahead is faint', [sky.lit.map(x => x.label), sky.faint.map(x => x.label)], [['Vault full'], ['Transfer to OSU']]);
+    eq('…and a star always sits in the same place', L.starsOf(reached).lit[0].x, sky.lit[0].x);
+    const q = L.quilt(replay([ev('day.feel', { date: '2026-10-21', feel: 'steady' }), ev('gratitude', { date: '2026-10-21', text: 'a long walk' })], HOME.reducers, HOME.init), 2026, '2026-10-22');
+    eq('the year quilt: 12 rows, a square a day', [q.length, q[1].length, q[9].length], [12, 28, 31]);
+    eq('…coloured by how a day felt, with its grateful line', [q[9][20].feel, q[9][20].grateful, q[9][22].future], ['steady', 'a long walk', true]);
+    const ms = replay([ev('milestone', { id: 'm1', title: 'The car is paid off.', facts: [['$210', 'a month, yours again']], date: '2028-01-31' }), ev('milestone.seen', { id: 'm1' })], HOME.reducers, HOME.init);
+    eq('a milestone gets its moment once', ms.milestones.map(x => x.seen), [true]);
+  }
+
 }
 
 const progress = setInterval(() => { document.getElementById('sum').textContent = 'Running… ' + group + ' (' + results.length + ' so far)'; }, 200);

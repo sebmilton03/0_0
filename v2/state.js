@@ -10,7 +10,7 @@ const burner = hs => Object.fromEntries(Object.entries(hs || {}).map(([k, h]) =>
 
 export const APP = {
   init: { settings: {}, places: [], tabs: [], ticks: {}, checkins: {}, sleep: {}, days: {}, sayings: [], archived: null,
-    blocks: {}, once: [], skips: [], cues: {}, parked: [], habits: {}, road: [], months: {}, person: null },
+    blocks: {}, once: [], skips: [], cues: {}, parked: [], habits: {}, road: [], months: {}, person: null, milestones: [], letters: [] },
   reducers: {
     // { name, wake, windDown, payday, place: { lat, lon, label }, words }
     settings: (s, d) => ({ ...s, settings: { ...s.settings, ...d } }),
@@ -94,6 +94,14 @@ export const APP = {
     person: (s, d) => ({ ...s, person: d.name || d.phone ? { name: d.name || '', phone: d.phone || '' } : null }),
     // The month close: { month, name }.
     'month.close': (s, d) => ({ ...s, months: { ...s.months, [d.month]: { name: d.name || '', closed: true } } }),
+    // How a day felt, for the year quilt: 'easy' | 'steady' | 'deep' | 'heavy'.
+    'day.feel': (s, d) => ({ ...s, days: { ...s.days, [d.date]: { ...s.days[d.date], feel: d.feel } } }),
+    // Milestones get a moment: { id, title, facts: [[big, small]], date }. Seen once.
+    milestone: (s, d) => ({ ...s, milestones: [...s.milestones.filter(x => x.id !== d.id), { id: d.id, title: d.title, facts: d.facts || [], date: d.date, letter: d.letter || null }] }),
+    'milestone.seen': (s, d) => ({ ...s, milestones: s.milestones.map(x => (x.id === d.id ? { ...x, seen: true } : x)) }),
+    // Letters to future you, sealed until { kind: 'date' | 'stop' | 'tide', value }.
+    'letter.add': (s, d, e) => ({ ...s, letters: [...s.letters, { id: d.id, title: d.title, text: d.text, opens: d.opens, written: e.at.slice(0, 10) }] }),
+    'letter.open': (s, d) => ({ ...s, letters: s.letters.map(x => (x.id === d.id ? { ...x, opened: d.date } : x)) }),
     // A copy of what the v1 apps had saved, taken once, quietly. Kept so nothing is lost; places bring in what they need.
     'v1-archive': (s, d, e) => ({ ...s, archived: { at: e.at, id: e.id, keys: Object.keys(d.keys || {}) } }),
   },

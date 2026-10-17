@@ -12,7 +12,7 @@ export function render(ctx) {
       `<p class="fine" style="margin-top:6px">Slow, steady, permanent. You move to the next step when you say you’ve reached it, and a missed day never resets anything.</p>` +
       `<button class="done pink" data-act="presetSleep" style="margin-top:22px">Start with sleep</button>` +
       `<p class="fine center" style="margin-top:8px">Phone charges outside the bedroom, 14 nights. Then lights out by 11:30. Then 8 hours.</p>` +
-      `<button class="calm" data-act="newHabit" style="margin-top:16px"><i>+</i>Something else</button>` + roadHTML(s) };
+      `<button class="calm" data-act="newHabit" style="margin-top:16px"><i>+</i>Something else</button>` + roadHTML(s) + longView() };
   }
   let body = '';
   if (f) {
@@ -34,9 +34,13 @@ export function render(ctx) {
   if (burner.length) body += `<div class="lbl">On the back burner</div>` + burner.map(h => `<div class="pk"><div class="d">${esc(h.name)}<br><span class="fine">${esc(h.steps[h.step || 0].text)}</span></div><button class="w" data-act="makeFocus" data-id="${h.id}">focus</button></div>`).join('');
   body += `<button class="calm" data-act="newHabit" style="margin-top:14px"><i>+</i>A new habit (it waits on the back burner)</button>`;
   if (!along.length) body += `<button class="calm" data-act="presetMorning"><i>✎</i>Add “good morning” to ride along</button>`;
-  return { sky: m.sky, html: top + body + roadHTML(s) +
+  return { sky: m.sky, html: top + body + roadHTML(s) + longView() +
     (kept.length ? `<p class="fine center" style="margin-top:16px">${kept.length} kept habit${kept.length === 1 ? '' : 's'} live out of sight · <button class="link" data-act="kept">open</button></p>` : '') };
 }
+const longView = () => `<div class="lbl">The long view</div>` +
+  `<button class="calm" data-act="long" data-v="sky"><i>✦</i>Your sky<span class="go">›</span></button>` +
+  `<button class="calm" data-act="long" data-v="year"><i>▦</i>The year, as a quilt<span class="go">›</span></button>` +
+  `<button class="calm" data-act="long" data-v="letters"><i>✉</i>Letters to future you<span class="go">›</span></button>`;
 
 function roadHTML(s) {
   const r = s.road || [], ni = r.findIndex(x => !x.reached);
@@ -89,6 +93,13 @@ export const actions = {
   addStop: ctx => stopSheet(ctx, null),
   stop: (ctx, el) => stopSheet(ctx, el.dataset.id),
   saveStop: async ctx => { const t = document.getElementById('stext').value.trim(); if (!t) return; closeSheet(); await ctx.write('stop.add', { id: newId('s'), text: t }, 'On the road'); },
-  reachStop: async (ctx, el) => { closeSheet(); await ctx.write('stop.reached', { id: el.dataset.id, date: ctx.m.day }, 'You reached it.', 'three'); },
+  reachStop: async (ctx, el) => {
+    closeSheet();
+    const x = (ctx.state.road || []).find(r => r.id === el.dataset.id), letter = (ctx.state.letters || []).find(l => !l.opened && l.opens && l.opens.kind === 'stop' && l.opens.value === el.dataset.id);
+    await ctx.log.append('stop.reached', { id: el.dataset.id, date: ctx.m.day }, 'grow');
+    // A milestone gets a moment, and a letter sealed for it opens.
+    await ctx.write('milestone', { id: 'stop-' + el.dataset.id, title: x ? x.text.replace(/\.$/, '') + '.' : 'You reached it.', facts: [], date: ctx.m.day, letter: letter ? letter.id : null }, null, 'three');
+    ctx.go('home');
+  },
   dropStop: async (ctx, el) => { closeSheet(); await ctx.write('stop.remove', { id: el.dataset.id }, 'Taken off the road'); },
 };

@@ -307,7 +307,17 @@ export const actions = {
     closeSheet(); await ctx.write('loan.set', { loan: { name, owed, payment: pay, apr: apr / 100, asOf: ctx.m.day } }, 'Kept');
     if (!m.bills.some(b => b.loan)) await ctx.write('bill.set', { id: 'loan', name: name + ' payment', amounts: Array(12).fill(0), loan: true, bareMin: true });
   },
-  dropLoan: async ctx => { closeSheet(); await ctx.write('loan.set', { loan: null }); await ctx.write('bill.remove', { id: (M(ctx.state).bills.find(b => b.loan) || {}).id }, 'Paid off. That’s huge.', 'three'); },
+  dropLoan: async ctx => {
+    closeSheet();
+    const m = M(ctx.state), l = m.loan, v = moneyView(ctx.state, ctx.m.day), pay = l ? +l.payment || 0 : 0;
+    const back = v.rate ? pay / v.rate / engine().WEEKS_PER_MONTH : null;
+    await ctx.log.append('loan.set', { loan: null }, 'money');
+    await ctx.log.append('bill.remove', { id: (m.bills.find(b => b.loan) || {}).id }, 'money');
+    // A milestone gets a real moment: what it gave back, in money and in hours.
+    await ctx.write('milestone', { id: 'loan-' + ctx.m.day, title: (l && l.name ? l.name.charAt(0).toUpperCase() + l.name.slice(1) : 'The loan') + ' is paid off.', date: ctx.m.day,
+      facts: [[money(pay), 'a month, yours again'], ...(back ? [['≈ ' + hrs(back) + ' hr', 'a week, back for school']] : [])] }, null, 'three');
+    ctx.go('home');
+  },
   saveExtra: async ctx => {
     const roth = num('xroth'), inv = num('xinv');
     if (!(roth >= 0) || !(inv >= 0 && inv <= 100)) return toast('Check the numbers.');

@@ -9,6 +9,7 @@ import { atWork, tomorrowLine, parked, span } from '../engines/week.js';
 import * as tide from './tide.js';
 import { shouldAsk } from '../engines/tide.js';
 import { daysBetween } from '../engines/sebdate.js';
+import { ready as readyLetters } from '../engines/long.js';
 
 export const PINNED = 'Who are you, where are you going, and breathe.';
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -43,6 +44,8 @@ export function render(ctx) {
   if (t === 'tide') { ctx.face('u_u'); return tide.lowTide(ctx); }
   if (t === 'back') { ctx.face('o_o'); return tide.comingBack(ctx); }
   if (t === 'welcome') { ctx.face('o_o'); return tide.welcome(ctx); }
+  const ms = (s.milestones || []).find(x => !x.seen);
+  if (ms) { ctx.face('^_^'); return milestone(ctx, ms); }
   if (m.phase === 'night') return night(ctx);
   if (m.phase === 'evening') return evening(ctx, w);
   const work = atWork(s, m.day, m.now);
@@ -92,6 +95,9 @@ function morning(ctx, w, due = []) {
     body = wia(w) + (w.next ? nextCard(w.next) : due.length ? parkedCard(due) : '');
   }
   if (!w.pillars.length && due.length) body += parkedCard(due);
+  // A letter whose day has come (rough-day letters open in low tide instead).
+  const lt = readyLetters(s, m.day).find(l => l.opens.kind !== 'tide');
+  if (lt) body += `<button class="next" data-act="openLetter" data-id="${lt.id}" style="width:100%;text-align:left;background:rgba(243,233,214,.1);border-color:rgba(243,233,214,.35)"><small style="color:#f3e9d6">A letter from you</small><b style="font-family:var(--serif);font-weight:400">${esc(lt.title)}</b><p>Sealed ${esc(lt.written)}. It can open now.</p></button>`;
   // Three quiet days might be good days, so it only asks, once.
   if (shouldAsk(s, ctx.lastActive(), m.day)) body = tide.askCard(daysBetween(ctx.lastActive(), m.day)) + body;
   return {
@@ -101,6 +107,22 @@ function morning(ctx, w, due = []) {
       `<div class="bdot" id="light" role="button" aria-label="Hold to breathe"><i></i><u></u></div>` + body +
       (w.pillars.length ? `<div class="clear">${w.next ? 'Everything else is fine.' : 'All is well.'}<div class="fine"><button data-act="all">checked everything · tap to see it all</button></div></div>` : ''),
   };
+}
+
+// A milestone gets a real moment: the face lights up, what it gave back, and a sealed letter opens.
+function milestone(ctx, ms) {
+  const { state: s, m } = ctx, next = (s.road || []).find(x => !x.reached), letter = ms.letter && (s.letters || []).find(l => l.id === ms.letter);
+  let sp = ''; let seed = 5; const r = () => (seed = (seed * 9301 + 49297) % 233280) / 233280;
+  for (let i = 0; i < 16; i++) { const x = 24 + r() * 342, y = 56 + r() * 250, z = 3 + r() * 5; sp += `<path d="M${x} ${y - z}L${x + z * .3} ${y - z * .3}L${x + z} ${y}L${x + z * .3} ${y + z * .3}L${x} ${y + z}L${x - z * .3} ${y + z * .3}L${x - z} ${y}L${x - z * .3} ${y - z * .3}Z" fill="#ffe2b0" opacity="${(.35 + r() * .5).toFixed(2)}"/>`; }
+  return { sky: 'dawn', bare: true, html: `<svg class="stars" viewBox="0 0 390 844">${sp}</svg>` +
+    `<div class="top">${dateTop(m.day)}<span class="r">a milestone</span></div>` +
+    `<div style="margin-top:44px;text-shadow:0 0 28px rgba(255,214,154,.65)" class="face">^_^</div>` +
+    `<div class="say center" style="font-size:34px;margin-top:18px">${esc(ms.title)}</div>` +
+    `<p class="fine center" style="font-size:15px;margin-top:8px;color:rgba(255,255,255,.82)">Every shift, every small step. Done.</p>` +
+    (ms.facts.length ? `<div class="facts" style="margin-top:24px">${ms.facts.map(([b, t]) => `<div><b>${esc(b)}</b><span>${esc(t)}</span></div>`).join('')}</div>` : '') +
+    (letter ? `<button data-act="openLetter" data-id="${letter.id}" style="display:block;width:100%;text-align:left;margin-top:16px;padding:18px 18px 16px 70px;border-radius:20px;background:linear-gradient(180deg,#f3e9d6,#e6d6b8);color:#3a2e1c;position:relative"><span style="position:absolute;left:16px;top:18px;width:38px;height:38px;border-radius:50%;background:radial-gradient(circle at 40% 35%,#d9665a,#9c3328)"></span><b style="display:block;font-family:var(--serif);font-size:18px">A letter from you</b><small style="display:block;font-size:12px;font-weight:700;color:#7a6548;margin-top:3px">sealed ${esc(letter.written)} · tap to open</small></button>` : '') +
+    (next ? `<p class="fine center" style="margin-top:14px">Next on the road: ${esc(next.text)}.</p>` : '') +
+    `<button class="done warm" data-act="msSeen" data-id="${ms.id}" style="margin-top:18px">That’s huge</button>` };
 }
 
 function parkedCard(due) {
@@ -140,8 +162,9 @@ function evening(ctx, w) {
   }
   return { sky: 'night', html: top + `<div class="moon"></div><div class="h1">Today happened.</div>` +
     (held ? `<div class="held">${held}</div>` : `<p class="fine" style="margin-top:10px">A quiet one. That counts too.</p>`) +
+    `<div class="lbl">How did today feel?</div><div class="opts" style="margin-top:0">${['easy', 'steady', 'deep', 'heavy'].map(f => `<button class="opt${d.feel === f ? ' on' : ''}" data-act="feel" data-v="${f}">${f}</button>`).join('')}</div>` +
     `<label class="grat" style="display:block"><small>Today I’m grateful for</small>` +
-    (d.grateful ? esc(d.grateful) : `<input id="grateful" maxlength="140" placeholder="one line, in your words" enterkeyhint="done">`) + `</label>` +
+    (d.grateful ? esc(d.grateful) : `<input id="grateful" maxlength="140" placeholder="one line, in your words" enterkeyhint="done"><button class="link" data-act="grateful" style="display:block;font-family:var(--sans);font-size:12.5px;margin-top:8px">keep it</button>`) + `</label>` +
     tomorrow(s, m.day) +
     `<button class="done" data-act="done">Done for today</button>` +
     `<p class="fine center" style="margin-top:12px">Nothing will ask for you until morning.</p>` };
@@ -233,6 +256,8 @@ export const actions = {
     el.closest('.sheet').querySelectorAll('[data-word]').forEach(i => { if (i.value.trim()) cur[i.dataset.word] = i.value.trim(); });
     words[k] = cur; closeSheet(); await ctx.write('settings', { words }, 'Your words are kept');
   },
+  msSeen: async (ctx, el) => { await ctx.write('milestone.seen', { id: el.dataset.id }); },
+  feel: async (ctx, el) => { await ctx.write('day.feel', { date: ctx.m.day, feel: el.dataset.v }, null, 'tick'); },
   grateful: async ctx => { const v = document.getElementById('grateful')?.value.trim(); if (v) await ctx.write('gratitude', { date: ctx.m.day, text: v }, 'Kept'); },
   done: async ctx => {
     const v = document.getElementById('grateful')?.value.trim();
