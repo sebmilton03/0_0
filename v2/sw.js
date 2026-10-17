@@ -11,6 +11,7 @@ const SHELL = [
   './engines/steps.js', './engines/study.js', './engines/tide.js', './engines/long.js',
   './places/home.js', './places/day.js', './places/money.js', './places/grow.js', './places/study.js', './places/tide.js', './places/long.js',
   '../valley/engine.js', '../icon-192.png', '../icon-512.png',
+  './fonts/literata-latin.woff2', './fonts/inter-latin.woff2',   // the -ext pieces are saved the first time they're used
 ];
 
 self.addEventListener('install', e => {
