@@ -3,13 +3,14 @@
 
 import { EMPTY as EMPTY_MONEY } from './engines/money.js';
 const M = s => s.money || EMPTY_MONEY;
+const TD = s => s.tide || { on: false, from: null, history: [] };
 const ST = s => s.study || { target: 0, days: {}, running: null, tasks: [] };
 const under = (tasks, id) => tasks.filter(t => t.parent === id).flatMap(c => [c.id, ...under(tasks, c.id)]);
 const burner = hs => Object.fromEntries(Object.entries(hs || {}).map(([k, h]) => [k, h.status === 'focus' ? { ...h, status: 'backburner' } : h]));
 
 export const APP = {
   init: { settings: {}, places: [], tabs: [], ticks: {}, checkins: {}, sleep: {}, days: {}, sayings: [], archived: null,
-    blocks: {}, once: [], skips: [], cues: {}, parked: [], habits: {}, road: [] },
+    blocks: {}, once: [], skips: [], cues: {}, parked: [], habits: {}, road: [], months: {}, person: null },
   reducers: {
     // { name, wake, windDown, payday, place: { lat, lon, label }, words }
     settings: (s, d) => ({ ...s, settings: { ...s.settings, ...d } }),
@@ -84,6 +85,15 @@ export const APP = {
     'task.done': (s, d) => { const st = ST(s), ids = new Set([d.id, ...under(st.tasks, d.id)]);
       return { ...s, study: { ...st, tasks: st.tasks.map(t => (ids.has(t.id) ? { ...t, done: !!d.done } : t)) } }; },
     'task.remove': (s, d) => { const st = ST(s), ids = new Set([d.id, ...under(st.tasks, d.id)]); return { ...s, study: { ...st, tasks: st.tasks.filter(t => !ids.has(t.id)) } }; },
+    // Low tide. It never decides for you: you start it, or say yes when it asks once.
+    'tide.on': (s, d) => ({ ...s, tide: { ...TD(s), on: true, from: d.date } }),
+    'tide.off': (s, d) => { const t = TD(s); return { ...s, tide: { ...t, on: false, from: null, welcomed: null, history: [...(t.history || []), { from: t.from, to: d.date }] } }; },
+    'tide.asked': (s, d) => ({ ...s, tide: { ...TD(s), asked: d.date } }),
+    'tide.welcomed': (s, d) => ({ ...s, tide: { ...TD(s), welcomed: d.date } }),
+    // Your person, chosen on a good day: { name, phone }. Stays on this phone.
+    person: (s, d) => ({ ...s, person: d.name || d.phone ? { name: d.name || '', phone: d.phone || '' } : null }),
+    // The month close: { month, name }.
+    'month.close': (s, d) => ({ ...s, months: { ...s.months, [d.month]: { name: d.name || '', closed: true } } }),
     // A copy of what the v1 apps had saved, taken once, quietly. Kept so nothing is lost; places bring in what they need.
     'v1-archive': (s, d, e) => ({ ...s, archived: { at: e.at, id: e.id, keys: Object.keys(d.keys || {}) } }),
   },

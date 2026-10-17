@@ -6,6 +6,7 @@ import { esc, openSheet, closeSheet, toast, buzz, money, hrs } from '../ui.js';
 import { view, FEEL, trade, damPlan, afterDam, fromValley, amountsFor, lastBalance, POCKETS, EMPTY, engine } from '../engines/money.js';
 import { weekHours, blocksOn } from '../engines/week.js';
 import { addDays, weekday } from '../engines/sebdate.js';
+import { monthFacts, named } from '../engines/tide.js';
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -27,7 +28,8 @@ export function render(ctx) {
   const { state: s, m } = ctx, v = moneyView(s, m.day);
   if (!v.ready) return setup(ctx);
   if (screen === 'dam' && !v.dam.done) return damScreen(ctx, v);
-  screen = 'home';
+  if (v.dam.done && !(s.months || {})[v.dam.month] && screen !== 'later') return monthClose(ctx, v);
+  if (screen !== 'later') screen = 'home';
   const f = v.feeling, room = v.room;
   const lines = {
     steady: `About <b>${money(v.income.lo)}${v.income.hi - v.income.lo > 50 ? '–' + money(v.income.hi).slice(1) : ''}</b> coming in${v.range ? ' (tips move it)' : ''}. Bills are covered, with <b>${hrs(room)} hours of breathing room</b>.`,
@@ -116,6 +118,23 @@ function damScreen(ctx, v) {
     `<button class="done peachy" data-act="damMove" data-key="${st.key}" data-amount="${st.amount}" style="margin-top:16px">Done</button></div>` +
     (done ? `<div class="lbl">Done</div>${done}` : '') +
     (next.length ? `<p class="fine center" style="margin-top:12px">Next: ${esc(next.slice(0, 2).join(', then '))}${next.length > 2 ? ', and the rest' : ''}.</p>` : '') };
+}
+
+/* ---------- The month close: four facts and one sentence to name it. Nothing scored. ---------- */
+function monthClose(ctx, v) {
+  const s = ctx.state, f = monthFacts(s, v.dam.month), mi = +v.dam.month.slice(5) - 1, past = named(s).slice(0, 4);
+  const loanName = M(s).loan ? M(s).loan.name || 'the loan' : null;
+  return { sky: 'dusk', html:
+    `<div class="top"><span><b>${dayName(ctx.m.day)}</b></span><span>month end · Dam Day</span></div>` +
+    `<div style="font-family:var(--serif);font-size:52px;line-height:1;margin-top:20px">${MONTH[mi]},<br>closed.</div>` +
+    `<div class="facts"><div><b>${f.hours ? Math.round(f.hours) + ' hr' : '—'}</b><span>worked (from your checks)</span></div>` +
+    `<div><b>${f.loanMoved ? '−' + money(f.loanMoved) : '—'}</b><span>${loanName ? esc(loanName) + ' moved' : 'extra to the loan'}</span></div>` +
+    `<div><b>${f.habitDays}</b><span>days a habit happened</span></div><div><b>${f.grateful}</b><span>grateful lines</span></div></div>` +
+    `<div class="grat" style="border-style:dashed;margin-top:18px"><small>Name this month</small><input id="mname" maxlength="80" placeholder="the month I…"></div>` +
+    (past.length ? `<div class="lbl" style="margin-top:20px">Months behind you</div>` + past.map(([mo, x]) => `<div style="display:flex;justify-content:space-between;padding:9px 2px;border-bottom:1px solid rgba(255,255,255,.07);font-size:13.5px"><span style="color:rgba(255,255,255,.5);font-weight:700">${MON[+mo.slice(5) - 1]}</span><em style="font-family:var(--serif);color:rgba(255,255,255,.85)">${esc(x.name)}</em></div>`).join('') : '') +
+    `<button class="done warm" data-act="closeMonth" style="margin-top:18px">Close ${MONTH[mi]}</button>` +
+    `<button class="calm" data-act="export"><i>⇩</i>Save a backup while you’re here</button>` +
+    `<p class="fine center" style="margin-top:10px">${MONTH[(mi + 1) % 12]} starts clean. <button class="link" data-act="closeLater">later</button></p>` };
 }
 
 /* ---------- Sheets ---------- */
@@ -245,6 +264,13 @@ export const actions = {
     screen = 'home';
     await ctx.write('dam.done', { month: v.dam.month, date: ctx.m.day, after: afterDam(typed, plan) }, 'The dam is closed', 'three');
   },
+  closeMonth: async ctx => {
+    const v = moneyView(ctx.state, ctx.m.day), name = document.getElementById('mname')?.value.trim() || '';
+    await ctx.log.append('month.close', { month: v.dam.month, name }, 'money');
+    // (The month's checkpoint is saved once the month has really ended; see start() in app.js.)
+    screen = 'home'; await ctx.refresh(); toast(name ? '“' + name + '”' : 'Closed. A new month.');
+  },
+  closeLater: ctx => { screen = 'later'; ctx.render(); },
   fromValley: async ctx => {
     const arc = (await ctx.log.all()).filter(e => e.kind === 'v1-archive').pop();
     const keys = arc ? arc.data.keys : {}, data = fromValley(keys['0_0-valley-v1']);

@@ -451,6 +451,26 @@ async function run() {
     eq('…and gently "catching up" if Wednesday comes with no more', where({ ...HOME.init, places: ['school'] }, '2026-10-21', 9, { study: { target: 12, days: s.study.days } }).pillars[0].word, 'catching up');
   }
 
+  // ---------------------------------------------------------------- low tide
+  group = 'Low tide, coming back, the month close';
+  {
+    const T = await import('../engines/tide.js');
+    const on = replay([ev('tide.on', { date: '2026-10-22' })], HOME.reducers, HOME.init);
+    eq('low tide starts only when you say so', [T.tideOf(HOME.init).on, T.tideOf(on).on], [false, true]);
+    const off = replay([ev('tide.on', { date: '2026-10-22' }), ev('tide.off', { date: '2026-10-26' })], HOME.reducers, HOME.init);
+    eq('…and when it ends, it remembers how long it was out', [T.tideOf(off).on, T.tideOf(off).last], [false, { from: '2026-10-22', to: '2026-10-26' }]);
+    eq('it asks once after three quiet days', T.shouldAsk(HOME.init, '2026-10-19', '2026-10-22'), true);
+    eq('…not after two', T.shouldAsk(HOME.init, '2026-10-20', '2026-10-22'), false);
+    eq('…and not again for two weeks once asked', T.shouldAsk(replay([ev('tide.asked', { date: '2026-10-22' })], HOME.reducers, HOME.init), '2026-10-19', '2026-10-30'), false);
+    eq('missed shifts against real breathing room: still covered', T.missedWords(2, 10, 30), '2 shifts missed. Still covered, 10 hours to spare.');
+    eq('…or short, and the vault carries it', T.missedWords(4, 10, 30), '4 shifts missed. 10 hours short; the vault carries it.');
+    const s = replay([ev('money.import', { paychecks: [{ id: 'a', date: '2026-10-09', net: 1185, hours: 68 }, { id: 'b', date: '2026-10-23', net: 1100, hours: 64 }] }),
+      ev('cue', { date: '2026-10-05', item: 'h:gm', done: true }), ev('cue', { date: '2026-10-06', item: 'h:gm', done: true }), ev('gratitude', { date: '2026-10-06', text: 'a slow morning' })], HOME.reducers, HOME.init);
+    eq('the month close: four facts, none of them scores', T.monthFacts(s, '2026-10'), { hours: 132, loanMoved: 0, habitDays: 2, grateful: 1 });
+    const n = replay([ev('month.close', { month: '2026-10', name: 'the month 0_0 began' })], HOME.reducers, HOME.init);
+    eq('named months stack up into a story', T.named(n).map(([m, x]) => m + ': ' + x.name), ['2026-10: the month 0_0 began']);
+  }
+
 }
 
 const progress = setInterval(() => { document.getElementById('sum').textContent = 'Running… ' + group + ' (' + results.length + ' so far)'; }, 200);

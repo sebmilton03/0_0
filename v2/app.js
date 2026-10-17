@@ -13,9 +13,15 @@ import * as day from './places/day.js';
 import * as moneyPlace from './places/money.js';
 import * as grow from './places/grow.js';
 import * as study from './places/study.js';
+import * as tidePlace from './places/tide.js';
 import { focusOf, byStatus, cueLine } from './engines/steps.js';
+import { daysBetween } from './engines/sebdate.js';
 
 export const PLACES = { home, day, money: moneyPlace, grow, study };
+// Low tide's taps live with Home's screens; it isn't a tab.
+const EXTRA_ACTIONS = [tidePlace.actions];
+const memo = {};                        // things shown but never saved (missed shifts on the way back)
+let lastOpen = null, lastActive = null, welcomed = false;
 export const TABS = ['home', 'day', 'money', 'grow', 'study'];
 
 let log, store, state, awake = false, face = '0_0', current = 'home';
@@ -51,6 +57,11 @@ function ctx() {
     state, m, log, store, extra: extraFor(m.day),
     write, render, go, breathe, places: Object.keys(PLACES),
     refresh: async () => { state = await store.state(); render(); },
+    memo,
+    away: () => (welcomed || !lastOpen ? 0 : daysBetween(lastOpen, m.day)),
+    lastOpen: () => lastOpen,
+    lastActive: () => lastActive,
+    welcomeDone: () => { welcomed = true; render(); },
     // Grow's lines for Day's chain: the focus habit at wind-down, morning habits in the morning.
     focus: day => { const f = focusOf(state); return f && f.cue !== 'morning' ? cueLine(state, f, day) : null; },
     morningHabits: day => [focusOf(state), ...byStatus(state, 'along')].filter(h => h && h.cue === 'morning').map(h => cueLine(state, h, day)),
@@ -78,8 +89,8 @@ function nav(c) {
   return `<nav class="links">${tabs.map(t => `<button class="${t === current ? 'on' : ''}" data-act="tab" data-k="${t}">${t}</button>`).join('')}</nav>`;
 }
 function render() {
-  const c = ctx(), place = PLACES[current] || home;
-  if (!PLACES[current]) current = 'home';
+  if (!PLACES[current] || (state.tide && state.tide.on)) current = 'home';   // low tide: Home only, no bar
+  const c = ctx(), place = PLACES[current];
   const out = place.render(c);
   paint(out.sky || c.m.sky);
   $('app').innerHTML = `<main class="scr${out.bare ? ' bare' : ''}">${out.html}</main>` + (out.bare || c.m.phase === 'night' ? '' : nav(c));
@@ -109,7 +120,7 @@ async function write(kind, data, msg, haptic) {
 function settingsSheet() {
   const s = state.settings;
   openSheet(`<div class="lbl">Settings</div><div class="say">Everything stays on this phone.</div>` +
-    `<div class="opts"><button class="opt" data-act="add">+ add a place</button></div>` +
+    `<div class="opts"><button class="opt" data-act="add">+ add a place</button><button class="opt" data-act="tideMenu">low tide</button></div>` +
     `<div class="lbl">What should I call you?</div><input class="field" id="setName" value="${esc(s.name || '')}" placeholder="your name">` +
     `<div class="grid2"><div><div class="lbl">Morning starts</div><input class="field" type="time" id="setWake" value="${esc(s.wake || '07:00')}"></div>` +
     `<div><div class="lbl">Wind-down</div><input class="field" type="time" id="setWind" value="${esc(s.windDown || '22:30')}"></div></div>` +
@@ -119,6 +130,8 @@ function settingsSheet() {
     `<div class="lbl">Winding down, one per line</div><textarea class="field" id="setEvening" rows="2" placeholder="things you do before bed">${esc((s.evening || []).join('\n'))}</textarea>` +
     `<div class="grid2"><div><div class="lbl">Free day</div><select class="field" id="setFree">${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((d, i) => `<option value="${i}"${(s.freeDay ?? 1) == i ? ' selected' : ''}>${d}</option>`).join('')}</select></div>` +
     `<div><div class="lbl">Meals, getting ready</div><input class="field" type="number" step="0.5" min="0" max="6" id="setMeals" value="${esc(s.meals ?? 1.5)}"></div></div>` +
+    `<div class="lbl">Your person · choose on a good day</div><div class="grid2"><input class="field" id="setPerson" value="${esc((state.person || {}).name || '')}" placeholder="who you’d text"><input class="field" id="setPhone" inputmode="tel" value="${esc((state.person || {}).phone || '')}" placeholder="their number"></div>` +
+    `<p class="fine">On a heavy day, low tide opens a message to them, already written.</p>` +
     `<button class="pbtn" data-act="saveSettings" style="margin-top:14px">Keep these</button>` +
     ((state.tabs || []).length ? `<div class="lbl">In the bar</div>` + state.tabs.map(t => `<div class="pk"><div class="d">${t}</div><button class="w" data-act="tabRemove" data-k="${t}">take out</button></div>`).join('') : '') +
     `<div class="lbl">The sky</div><p class="fine" style="margin:0">${s.place ? 'It follows the real sun where you are.' : 'A plain day for now: sunrise at 7, sunset at 6:30.'}</p>` +
@@ -182,7 +195,9 @@ const shell = {
     if (evening.join('\n') !== (s.evening || []).join('\n')) d.evening = evening;
     if (free !== (s.freeDay ?? 1)) d.freeDay = free;
     if (meals >= 0 && meals !== (s.meals ?? 1.5)) d.meals = meals;
+    const pn = $('setPerson').value.trim(), pp = $('setPhone').value.trim(), op = state.person || {};
     closeSheet();
+    if (pn !== (op.name || '') || pp !== (op.phone || '')) await write('person', { name: pn, phone: pp });
     if (Object.keys(d).length) await write('settings', d, 'Kept');
     if (say) await write('saying.add', { text: say, kind: 'saying' }, 'Saying kept');
   },
@@ -218,21 +233,28 @@ document.addEventListener('click', async ev => {
   if (!a) return;
   const act = a.dataset.act, place = PLACES[current] || home;
   // The place on screen first, then any place (a Home card can park a thought), then the shell.
-  const fn = (place.actions && place.actions[act]) || Object.values(PLACES).map(p => p.actions && p.actions[act]).find(Boolean) || shell[act];
+  const fn = (place.actions && place.actions[act]) || [...Object.values(PLACES).map(p => p.actions), ...EXTRA_ACTIONS].map(a => a && a[act]).find(Boolean) || shell[act];
   if (fn) await fn(ctx(), a);
 });
 
-// Hold the light to breathe. A quick tap just says how.
-let holdTimer = null;
+// Hold the light to breathe (a quick tap just says how). Hold the face for low tide (a tap opens settings).
+let holdTimer = null, held = false, holdWhat = null;
 document.addEventListener('pointerdown', e => {
-  const l = e.target.closest('#light'); if (!l) return;
-  l.classList.add('holding');
-  holdTimer = setTimeout(() => { holdTimer = null; l.classList.remove('holding'); buzz('tick'); breathe(); }, 650);
+  const l = e.target.closest('#light'), f = e.target.closest('.facebtn');
+  if (!l && !f) return;
+  held = false; holdWhat = l ? 'light' : 'face';
+  if (l) l.classList.add('holding');
+  holdTimer = setTimeout(() => {
+    holdTimer = null; held = true; buzz('tick');
+    if (l) { l.classList.remove('holding'); breathe(); } else tidePlace.tideMenu(ctx());
+  }, 650);
 });
 document.addEventListener('pointerup', () => {
   $('light')?.classList.remove('holding');
-  if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; toast('Hold the light to breathe'); }
+  if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; if (holdWhat === 'light') toast('Hold the light to breathe'); }
 });
+// A held face shouldn't also open settings when the finger lifts.
+document.addEventListener('click', e => { if (held && e.target.closest('.facebtn')) { e.stopImmediatePropagation(); held = false; } }, true);
 document.addEventListener('pointercancel', () => { if (holdTimer) { clearTimeout(holdTimer); holdTimer = null; } $('light')?.classList.remove('holding'); });
 document.addEventListener('keydown', e => { if (e.key === 'Enter' && e.target.id === 'grateful') home.actions.grateful(ctx()); });
 
@@ -247,6 +269,15 @@ async function start() {
     const keys = {};
     for (const k of V1_KEYS) { const v = localStorage.getItem(k); if (v != null) keys[k] = v; }
     if (Object.keys(keys).length) { await log.append('v1-archive', { keys }, 'v1'); state = await store.state(); }
+  }
+  // When you last opened 0_0 (this phone only), and the last day anything was written.
+  try { lastOpen = localStorage.getItem('0_0-v2-open'); if (!AT && !ON) localStorage.setItem('0_0-v2-open', todayOf(clock())); } catch {}   // previews never move it
+  const all = await log.all(), evs = all.filter(e => e.kind !== 'v1-archive' && e.kind !== 'checkpoint');
+  lastActive = evs.length ? evs[evs.length - 1].at.slice(0, 10) : null;
+  // A month checkpoint, once a calendar month has ended: a fingerprint a rebuild must always match.
+  const t = todayOf(new Date()), prev = (+t.slice(5, 7) === 1 ? (+t.slice(0, 4) - 1) + '-12' : t.slice(0, 5) + String(+t.slice(5, 7) - 1).padStart(2, '0'));
+  if (!AT && !ON && evs.some(e => e.at.slice(0, 7) <= prev) && !all.some(e => e.kind === 'checkpoint' && e.data.month === prev)) {
+    try { await store.checkpoint(prev); } catch {}
   }
   recall();
   render();

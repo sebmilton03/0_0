@@ -6,6 +6,9 @@ import { esc, openSheet, closeSheet, buzz, stars } from '../ui.js';
 import { PILLARS, ORDER, SLEEP, where, nextLine, lastWeek } from '../engines/pillars.js';
 import { seb, checkSettings, weekday } from '../engines/sebdate.js';
 import { atWork, tomorrowLine, parked, span } from '../engines/week.js';
+import * as tide from './tide.js';
+import { shouldAsk } from '../engines/tide.js';
+import { daysBetween } from '../engines/sebdate.js';
 
 export const PINNED = 'Who are you, where are you going, and breathe.';
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -35,6 +38,11 @@ function sayingFor(s, day) {
 export function render(ctx) {
   const { state: s, m } = ctx, w = where(s, m.day, m.hour, ctx.extra);
   ctx.face(w.chillin && w.pillars.length ? '-_-' : '0_0');
+  // Low tide, coming back in, and welcome back come before everything else.
+  const t = tide.which(ctx);
+  if (t === 'tide') { ctx.face('u_u'); return tide.lowTide(ctx); }
+  if (t === 'back') { ctx.face('o_o'); return tide.comingBack(ctx); }
+  if (t === 'welcome') { ctx.face('o_o'); return tide.welcome(ctx); }
   if (m.phase === 'night') return night(ctx);
   if (m.phase === 'evening') return evening(ctx, w);
   const work = atWork(s, m.day, m.now);
@@ -84,6 +92,8 @@ function morning(ctx, w, due = []) {
     body = wia(w) + (w.next ? nextCard(w.next) : due.length ? parkedCard(due) : '');
   }
   if (!w.pillars.length && due.length) body += parkedCard(due);
+  // Three quiet days might be good days, so it only asks, once.
+  if (shouldAsk(s, ctx.lastActive(), m.day)) body = tide.askCard(daysBetween(ctx.lastActive(), m.day)) + body;
   return {
     sky: m.sky, html:
       `<div class="top">${dateTop(m.day)}<span class="r">${sebChip(s, m.day)}${faceBtn(ctx.faceNow())}</span></div>` +
