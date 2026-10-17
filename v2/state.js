@@ -1,6 +1,9 @@
 // What v2 remembers, rebuilt from the log. One small function per kind of event.
 // Undo is never handled here: the log hides the event and replay simply skips it.
 
+import { EMPTY as EMPTY_MONEY } from './engines/money.js';
+const M = s => s.money || EMPTY_MONEY;
+
 export const APP = {
   init: { settings: {}, places: [], tabs: [], ticks: {}, checkins: {}, sleep: {}, days: {}, sayings: [], archived: null,
     blocks: {}, once: [], skips: [], cues: {}, parked: [] },
@@ -32,6 +35,24 @@ export const APP = {
     // Park it: { text, until: 'sunday' | 'monday' | 'free' | 'damday' | 'YYYY-MM-DD', on: date }. Done: { id }.
     park: (s, d, e) => ({ ...s, parked: [...s.parked, { id: e.id, text: d.text, until: d.until, on: d.on }] }),
     'park.done': (s, d) => ({ ...s, parked: s.parked.map(p => (p.id === d.id ? { ...p, done: true } : p)) }),
+    // Money. Shapes match Valley's engine so it runs unchanged (see engines/money.js).
+    'money.import': (s, d, e) => ({ ...s, money: { ...EMPTY_MONEY, ...M(s), ...d, imported: e.at } }),
+    'pocket.set': (s, d) => { const m = M(s); return { ...s, money: { ...m, jars: { ...m.jars, [d.key]: { ...m.jars[d.key], ...d.set } } } }; },
+    'bill.set': (s, d) => { const m = M(s), bills = m.bills.filter(b => b.id !== d.id); const i = m.bills.findIndex(b => b.id === d.id);
+      bills.splice(i < 0 ? bills.length : i, 0, { id: d.id, name: d.name, amounts: d.amounts, loan: !!d.loan, bareMin: !!d.bareMin }); return { ...s, money: { ...m, bills } }; },
+    'bill.remove': (s, d) => { const m = M(s); return { ...s, money: { ...m, bills: m.bills.filter(b => b.id !== d.id) } }; },
+    'loan.set': (s, d) => ({ ...s, money: { ...M(s), loan: d.loan } }),
+    'extra.set': (s, d) => { const m = M(s); return { ...s, money: { ...m, extra: { ...m.extra, ...d } } }; },
+    'income.set': (s, d) => { const m = M(s); return { ...s, money: { ...m, income: { ...m.income, ...d } } }; },
+    'pay.set': (s, d) => ({ ...s, money: { ...M(s), pay: d } }),
+    paycheck: (s, d, e) => { const m = M(s); return { ...s, money: { ...m, paychecks: [...m.paychecks, { id: e.id, date: d.date, net: +d.net, hours: +d.hours }] } }; },
+    balance: (s, d) => { const m = M(s); return { ...s, money: { ...m, balances: [...m.balances, { date: d.date, jar: d.jar, value: +d.value }] } }; },
+    // Dam Day: each transfer you make, then the close (with what each pocket now holds).
+    'dam.move': (s, d) => { const m = M(s); return { ...s, money: { ...m, moves: { ...m.moves, [d.month]: { ...(m.moves[d.month] || {}), [d.key]: +d.amount } } } }; },
+    'dam.done': (s, d) => { const m = M(s); return { ...s, money: { ...m, damDone: [...m.damDone, d.month], ious: m.ious.map(x => ({ ...x, paid: true })),
+      balances: [...m.balances, ...Object.entries(d.after || {}).map(([jar, value]) => ({ date: d.date, jar, value: +value }))] } }; },
+    spent: (s, d) => { const m = M(s); return { ...s, money: { ...m, spent: [...m.spent, { date: d.date, amount: +d.amount, note: d.note || '' }] } }; },
+    borrow: (s, d) => { const m = M(s); return { ...s, money: { ...m, ious: [...m.ious, { date: d.date, from: d.from, amount: +d.amount }] } }; },
     // A copy of what the v1 apps had saved, taken once, quietly. Kept so nothing is lost; places bring in what they need.
     'v1-archive': (s, d, e) => ({ ...s, archived: { at: e.at, id: e.id, keys: Object.keys(d.keys || {}) } }),
   },

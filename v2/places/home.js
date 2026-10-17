@@ -33,7 +33,7 @@ function sayingFor(s, day) {
 
 /** The screen: { sky, stars, html, bare (no bottom bar) } */
 export function render(ctx) {
-  const { state: s, m } = ctx, w = where(s, m.day, m.hour);
+  const { state: s, m } = ctx, w = where(s, m.day, m.hour, ctx.extra);
   ctx.face(w.chillin && w.pillars.length ? '-_-' : '0_0');
   if (m.phase === 'night') return night(ctx);
   if (m.phase === 'evening') return evening(ctx, w);
@@ -168,7 +168,7 @@ function sleepFeel(s, days) {
 }
 
 export function pillarSheet(ctx, key) {
-  const { state: s, m } = ctx, w = where(s, m.day, m.hour), p = w.pillars.find(x => x.key === key), P = PILLARS[key];
+  const { state: s, m } = ctx, w = where(s, m.day, m.hour, ctx.extra), p = w.pillars.find(x => x.key === key), P = PILLARS[key];
   const days = lastWeek(s, key, m.day), words = (s.settings.words || {})[key] || {};
   let acts = '';
   if (key === 'home' || key === 'food') acts = p.needs ? `<button class="opt" data-act="tick" data-k="${key}">done this week ✓</button>` : '';
@@ -199,7 +199,7 @@ export function addSheet(ctx) {
 }
 
 export function allSheet(ctx) {
-  const { state: s, m } = ctx, w = where(s, m.day, m.hour);
+  const { state: s, m } = ctx, w = where(s, m.day, m.hour, ctx.extra);
   openSheet(`<div class="lbl">Checked everything</div><div class="say">${w.next ? 'One thing needs you.' : 'All is well.'}</div>` +
     w.pillars.map(p => `<button class="calm" data-act="pillar" data-k="${p.key}"><i style="background:${p.needs ? 'rgba(255,213,154,.25)' : p.quiet ? 'rgba(255,255,255,.08)' : 'rgba(159,230,184,.22)'}">${p.needs ? '!' : p.quiet ? '·' : '✓'}</i><span><b>${p.name} · ${esc(p.word)}</b><br><span class="fine">${esc(p.detail)}</span></span><span class="go">›</span></button>`).join(''));
 }

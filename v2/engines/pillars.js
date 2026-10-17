@@ -28,9 +28,10 @@ const checkin = (s, k, from, to) => ((s.checkins || {})[k] || []).filter(c => c.
 /**
  * s:     v2 state ({ places, ticks, checkins, sleep, settings, money?, study? })
  * today: 'YYYY-MM-DD', hour: 0-23
+ * extra: what places worked out for today: { money: { ready, room, damDone }, study: { target, days } }.
  * Returns { pillars: [{ key, name, word, needs, quiet, urgent, detail, question }], next, chillin, allGood }.
  */
-export function where(s, today, hour) {
+export function where(s, today, hour, extra = {}) {
   const words = (s.settings && s.settings.words) || {};
   const week = weekOf(today), sunday = weekday(today) === 6;
   const out = [];
@@ -53,7 +54,7 @@ export function where(s, today, hour) {
       else if (sunday) { word = w.needs; needs = true; detail = 'One tap: did you spend real time with someone this week?'; }
       else { word = w.rest; quiet = true; detail = 'Sunday asks once. Tap now if it already happened.'; }
     } else if (key === 'money') {
-      const m = s.money;
+      const m = extra.money || s.money;
       if (!m || !m.ready) { word = w.rest; quiet = true; detail = 'Set up Money and this word becomes real.'; }
       else {
         const [y, mo] = today.split('-').map(Number), dam = damDay(y, mo), left = daysBetween(today, dam);
@@ -66,7 +67,7 @@ export function where(s, today, hour) {
           'Dam Day in ' + left + (left === 1 ? ' day.' : ' days.');
       }
     } else if (key === 'school') {
-      const st = s.study;
+      const st = extra.study || s.study;
       if (!st || !st.target) { word = w.rest; quiet = true; detail = 'Set a weekly target in Study and this word becomes real.'; }
       else {
         const mins = week.days.reduce((t, d) => t + ((st.days || {})[d] || 0), 0), goal = st.target * 60;

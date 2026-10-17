@@ -23,8 +23,10 @@
 The data is made up.</p>
 <p id="sum">Running…</p>
 <div id="out"></div>
+<script src="../../valley/engine.js"></script>
 <script type="module">
 import { openLog, dropLog, canonical, stamp, HIDDEN, CORRECTION } from '../core/log.js';
+import * as MN from '../engines/money.js';
 import { replay, effective, createStore, makeCheckpoint, verifyCheckpoint } from '../core/store.js';
 import { exportLog, importLog, check, backupName, persist } from '../core/backup.js';
 import * as D from '../engines/sebdate.js';
@@ -355,6 +357,54 @@ async function run() {
     eq('it waits, not lost, until its day', [W.parked(s, '2026-10-22').waiting.length, W.parked(s, '2026-10-22').due.length], [1, 0]);
     eq('on its day it comes back; done ones never do', [W.parked(s, '2026-10-25').due.map(p => p.id), W.parked(s, '2026-10-30').due.map(p => p.id)], [['a'], ['a']]);
   }
+  // ---------------------------------------------------------------- money
+  group = 'Money in hours (on Valley’s engine)';
+  {
+    // Made-up numbers only: the repo is public.
+    const valley = { jars: { income: { name: 'Income', bank: '' }, bills: { name: 'Bills', bank: '', cushion: 100 }, gas: { name: 'Gas', bank: '', cap: 150, spend: 120 },
+        misc: { name: 'Misc', bank: '', cap: 100, spend: 60 }, personal: { name: 'Personal', bank: '', amount: 300 }, vault: { name: 'Vault', bank: '', cap: 3000 } },
+      bills: [{ id: 'r', name: 'Rent', amounts: Array(12).fill(900) }, { id: 'l', name: 'the car payment', loan: true, amounts: Array(12).fill(0) },
+        { id: 'p', name: 'Phone', amounts: Array(12).fill(45) }, { id: 'i', name: 'Car insurance', amounts: [0, 0, 480, 0, 0, 0, 0, 0, 480, 0, 0, 0] }],
+      loan: { name: 'the car', owed: 6400, apr: 0.075, payment: 210, asOf: '2026-11' }, extra: { first: 'loan', rothLimit: 7500, investShare: 0.75, growth: 0.06 },
+      income: { monthly: 2400, hoursPerWeek: 34 }, pay: { payDate: '2026-10-09', every: 14, lag: 5 },
+      paychecks: [{ id: 'a', date: '2026-09-11', net: 1100, hours: 62 }, { id: 'b', date: '2026-09-25', net: 1120, hours: 64 }, { id: 'c', date: '2026-10-09', net: 1185, hours: 68 }],
+      balances: [{ date: '2026-10-16', jar: 'vault', value: 1200 }, { date: '2026-10-16', jar: 'personal', value: 180 }] };
+    eq('Money stays quiet until it has a bill and a paycheck', MN.view({ ...HOME.init }, '2026-10-21').ready, false);
+    const data = MN.fromValley(JSON.stringify(valley));
+    eq('bring in from Valley keeps pockets, bills, loan and paychecks', [data.bills.length, data.loan.owed, data.paychecks.length, data.jars.gas.cap], [4, 6400, 3, 150]);
+    eq('…and reads nothing it doesn’t understand', MN.fromValley('{not json'), null);
+    const s = replay([ev('money.import', data), ev('block.set', { id: 'job', kind: 'work', label: 'Pizza place', days: [3, 4, 5, 6], from: '10:00', to: '20:00' })], HOME.reducers, HOME.init);
+    const v = MN.view(s, '2026-10-21', 40);
+    eq('$/hr is the last three checks: take-home ÷ hours', +v.rate.toFixed(4), +(3405 / 194).toFixed(4));
+    eq('a month of life is exactly what Valley’s engine says it needs', v.life, VE.needs(s.money, 6400).total);
+    eq('…which here is $1,715 (bills saved ahead $1,235 + gas + misc + personal)', v.life, 1715);
+    eq('40 hours a week leaves breathing room: money feels steady', [v.feeling, Math.round(v.room)], ['steady', Math.round(40 * 52 / 12 - 1715 / v.rate)]);
+    eq('20 hours a week would be short', MN.view(s, '2026-10-21', 20).feeling, 'short');
+    eq('the day you can work less: about 22½ hr/wk now, less once the loan is gone', [Math.round(v.workLess.now * 2) / 2, v.workLess.afterLoan < v.workLess.now], [22.5, true]);
+    eq('Dam Day is the last day of the month, and splits for next month', [v.dam.date, v.dam.splitMonth, v.dam.days, v.dam.open], ['2026-10-31', '2026-11', 10, false]);
+    eq('the dam can open a week early', MN.view(s, '2026-10-24', 40).dam.open, true);
+    eq('the vault in months of life: $1,200 ÷ $1,715', +v.vault.months.toFixed(3), +(1200 / 1715).toFixed(3));
+    eq('fun money per day until the dam opens', [v.personal.balance, v.personal.days], [180, 11]);
+    const typed = { income: 2400, bills: 820, gas: 90, misc: 40, personal: 20, vault: 1200 };
+    const plan = MN.damPlan(s, MN.view(s, '2026-10-31', 40), typed);
+    eq('Dam Day’s transfers add up to Valley’s split', +plan.steps.reduce((t, x) => t + x.amount, 0).toFixed(2), +VE.round2(plan.split.total).toFixed(2));
+    eq('…in the order the pockets fill', plan.steps.map(x => x.key).slice(0, 5), ['bills', 'gas', 'misc', 'personal', 'vault']);
+    eq('…and exact to the cent', plan.steps.every(x => Math.abs(Math.round(x.amount * 100) - x.amount * 100) < 1e-6), true);
+    const after = MN.afterDam(typed, plan);
+    eq('after the dam closes, Income holds what wasn’t moved', +after.income.toFixed(2), +(2400 - plan.steps.reduce((t, x) => t + x.amount, 0)).toFixed(2));
+    const closed = replay([ev('money.import', data), ev('dam.done', { month: '2026-10', date: '2026-10-31', after })], HOME.reducers, HOME.init);
+    eq('closing the dam marks the month done', MN.view(closed, '2026-10-31', 40).dam.done, true);
+    eq('…and records what each pocket now holds', MN.lastBalance(closed.money, 'vault').value, after.vault);
+    const early = replay([ev('money.import', data), ev('dam.done', { month: '2026-10', date: '2026-10-27', after })], HOME.reducers, HOME.init);
+    eq('split early on the 27th: fun money now lasts until November’s Dam Day', MN.view(early, '2026-10-27', 40).personal.until, '2026-11-30');
+    eq('a bill every six months from March: March and September', MN.amountsFor(480, 'six', 2).map((a, i) => (a ? i : -1)).filter(i => i >= 0), [2, 8]);
+    const changed = replay([ev('money.import', data), ev('bill.set', { id: 'r', name: 'Rent', amounts: Array(12).fill(950) })], HOME.reducers, HOME.init);
+    eq('changing a bill keeps its place; the old amount stays in the log', [changed.money.bills[0].name, changed.money.bills[0].amounts[0], changed.money.bills.length], ['Rent', 950, 4]);
+    eq('the Money pillar reads Money’s breathing room', where({ ...HOME.init, places: ['money'] }, '2026-10-21', 9, { money: { ready: true, room: v.room, damDone: [] } }).pillars[0].word, 'steady');
+    const t = MN.trade(s, v, 10);
+    eq('the trade: one more shift a week pays the loan off sooner', t.sooner > 0 && t.studyLost === 10, true);
+  }
+
 }
 
 const progress = setInterval(() => { document.getElementById('sum').textContent = 'Running… ' + group + ' (' + results.length + ' so far)'; }, 200);

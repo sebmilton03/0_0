@@ -10,8 +10,9 @@ import { APP, V1_KEYS, parseSayings } from './state.js';
 import { $, esc, buzz, stars, openSheet, closeSheet, sheetOpen, toast, hideToast } from './ui.js';
 import * as home from './places/home.js';
 import * as day from './places/day.js';
+import * as moneyPlace from './places/money.js';
 
-export const PLACES = { home, day };
+export const PLACES = { home, day, money: moneyPlace };
 export const TABS = ['home', 'day', 'money', 'grow', 'study'];
 
 let log, store, state, awake = false, face = '0_0', current = 'home';
@@ -19,8 +20,16 @@ let log, store, state, awake = false, face = '0_0', current = 'home';
 /* ---------- Time of day ---------- */
 const hm = (t, dflt) => { const p = /^(\d{1,2}):(\d{2})$/.exec(typeof t === 'string' ? t : '') || /^(\d{1,2}):(\d{2})$/.exec(dflt); return +p[1] * 60 + +p[2]; };
 // ?at=09:30 pretends it's that time today, for trying the morning, evening and night screens.
-const AT = /^\d{1,2}:\d{2}$/.test(new URLSearchParams(location.search).get('at') || '') ? new URLSearchParams(location.search).get('at') : null;
-function clock() { const d = new Date(); if (AT) d.setHours(...AT.split(':').map(Number), 0, 0); return d; }
+// ?on=2026-10-31 pretends it's that date (for trying Dam Day and Sundays).
+const Q = new URLSearchParams(location.search);
+const AT = /^\d{1,2}:\d{2}$/.test(Q.get('at') || '') ? Q.get('at') : null;
+const ON = /^\d{4}-\d{2}-\d{2}$/.test(Q.get('on') || '') ? Q.get('on') : null;
+function clock() {
+  const d = new Date();
+  if (ON) d.setFullYear(+ON.slice(0, 4), +ON.slice(5, 7) - 1, +ON.slice(8, 10));
+  if (AT) d.setHours(...AT.split(':').map(Number), 0, 0);
+  return d;
+}
 function moment(now = clock()) {
   const set = state.settings, mins = now.getHours() * 60 + now.getMinutes();
   // (settings.evening is your wind-down list; the time the evening starts is eveningAt.)
@@ -34,13 +43,20 @@ function moment(now = clock()) {
 
 /* ---------- Drawing ---------- */
 function ctx() {
+  const m = moment();
   return {
-    state, m: moment(), log, store,
+    state, m, log, store, extra: extraFor(m.day),
     write, render, go, breathe, places: Object.keys(PLACES),
+    refresh: async () => { state = await store.state(); render(); },
     focus: () => null,   // the focus habit's line for tonight's cue (Grow fills this in)
     face: f => { face = f; }, faceNow: () => face,
     wake: () => { awake = true; render(); },
   };
+}
+// What places work out for Home's pillars: Money's breathing room, Study's week.
+function extraFor(day) {
+  const v = moneyPlace.moneyView(state, day);
+  return { money: v.ready ? { ready: true, room: v.room, damDone: (state.money || {}).damDone || [] } : { ready: false } };
 }
 function paint(skyName) {
   const el = $('sky');
