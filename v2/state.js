@@ -2,7 +2,8 @@
 // Undo is never handled here: the log hides the event and replay simply skips it.
 
 export const APP = {
-  init: { settings: {}, places: [], tabs: [], ticks: {}, checkins: {}, sleep: {}, days: {}, sayings: [], archived: null },
+  init: { settings: {}, places: [], tabs: [], ticks: {}, checkins: {}, sleep: {}, days: {}, sayings: [], archived: null,
+    blocks: {}, once: [], skips: [], cues: {}, parked: [] },
   reducers: {
     // { name, wake, windDown, payday, place: { lat, lon, label }, words }
     settings: (s, d) => ({ ...s, settings: { ...s.settings, ...d } }),
@@ -20,6 +21,17 @@ export const APP = {
     'day.done': (s, d) => ({ ...s, days: { ...s.days, [d.date]: { ...s.days[d.date], done: true } } }),
     // Your own sayings, brought in from your file or typed. { text, kind: 'mantra' | 'advice' | 'saying' }
     'saying.add': (s, d, e) => (s.sayings.some(x => x.text === d.text) ? s : { ...s, sayings: [...s.sayings, { id: e.id, text: d.text, kind: d.kind || 'saying' }] }),
+    // Day: your blocks. Weekly: { id, kind, label, days: [0-6], from: 'HH:MM', to: 'HH:MM' }. A change is a new block.set.
+    'block.set': (s, d) => ({ ...s, blocks: { ...s.blocks, [d.id]: d } }),
+    'block.remove': (s, d) => { const b = { ...s.blocks }; delete b[d.id]; return { ...s, blocks: b, once: s.once.filter(x => x.id !== d.id) }; },
+    // Just this week: { id, kind, label, date, from, to }. And dropping one day of a weekly block: { id, date }.
+    'block.once': (s, d) => ({ ...s, once: [...s.once.filter(x => x.id !== d.id), d] }),
+    'block.skip': (s, d) => ({ ...s, skips: [...s.skips, { id: d.id, date: d.date }] }),
+    // A line in today's chain, ticked or unticked: { date, item, done }.
+    cue: (s, d) => ({ ...s, cues: { ...s.cues, [d.date]: { ...s.cues[d.date], [d.item]: !!d.done } } }),
+    // Park it: { text, until: 'sunday' | 'monday' | 'free' | 'damday' | 'YYYY-MM-DD', on: date }. Done: { id }.
+    park: (s, d, e) => ({ ...s, parked: [...s.parked, { id: e.id, text: d.text, until: d.until, on: d.on }] }),
+    'park.done': (s, d) => ({ ...s, parked: s.parked.map(p => (p.id === d.id ? { ...p, done: true } : p)) }),
     // A copy of what the v1 apps had saved, taken once, quietly. Kept so nothing is lost; places bring in what they need.
     'v1-archive': (s, d, e) => ({ ...s, archived: { at: e.at, id: e.id, keys: Object.keys(d.keys || {}) } }),
   },

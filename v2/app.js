@@ -9,20 +9,22 @@ import { sky, SKIES } from './engines/sky.js';
 import { APP, V1_KEYS, parseSayings } from './state.js';
 import { $, esc, buzz, stars, openSheet, closeSheet, sheetOpen, toast, hideToast } from './ui.js';
 import * as home from './places/home.js';
+import * as day from './places/day.js';
 
-export const PLACES = { home };
+export const PLACES = { home, day };
 export const TABS = ['home', 'day', 'money', 'grow', 'study'];
 
 let log, store, state, awake = false, face = '0_0', current = 'home';
 
 /* ---------- Time of day ---------- */
-const hm = t => { const [h, m] = (t || '0:0').split(':').map(Number); return h * 60 + m; };
+const hm = (t, dflt) => { const p = /^(\d{1,2}):(\d{2})$/.exec(typeof t === 'string' ? t : '') || /^(\d{1,2}):(\d{2})$/.exec(dflt); return +p[1] * 60 + +p[2]; };
 // ?at=09:30 pretends it's that time today, for trying the morning, evening and night screens.
 const AT = /^\d{1,2}:\d{2}$/.test(new URLSearchParams(location.search).get('at') || '') ? new URLSearchParams(location.search).get('at') : null;
 function clock() { const d = new Date(); if (AT) d.setHours(...AT.split(':').map(Number), 0, 0); return d; }
 function moment(now = clock()) {
   const set = state.settings, mins = now.getHours() * 60 + now.getMinutes();
-  const wake = hm(set.wake || '07:00'), wind = hm(set.windDown || '22:30'), evening = hm(set.evening || '18:00');
+  // (settings.evening is your wind-down list; the time the evening starts is eveningAt.)
+  const wake = hm(set.wake, '07:00'), wind = hm(set.windDown, '22:30'), evening = hm(set.eveningAt, '18:00');
   // The date rolls over at midnight; the night screen runs from wind-down until morning.
   let phase = mins >= wind || mins < wake ? 'night' : mins >= evening ? 'evening' : 'day';
   if (phase === 'night' && awake) phase = 'day';   // "not yet": the full app until you leave it
@@ -34,7 +36,8 @@ function moment(now = clock()) {
 function ctx() {
   return {
     state, m: moment(), log, store,
-    write, render, go,
+    write, render, go, breathe, places: Object.keys(PLACES),
+    focus: () => null,   // the focus habit's line for tonight's cue (Grow fills this in)
     face: f => { face = f; }, faceNow: () => face,
     wake: () => { awake = true; render(); },
   };
@@ -83,12 +86,18 @@ async function write(kind, data, msg, haptic) {
 function settingsSheet() {
   const s = state.settings;
   openSheet(`<div class="lbl">Settings</div><div class="say">Everything stays on this phone.</div>` +
+    `<div class="opts"><button class="opt" data-act="add">+ add a place</button></div>` +
     `<div class="lbl">What should I call you?</div><input class="field" id="setName" value="${esc(s.name || '')}" placeholder="your name">` +
     `<div class="grid2"><div><div class="lbl">Morning starts</div><input class="field" type="time" id="setWake" value="${esc(s.wake || '07:00')}"></div>` +
     `<div><div class="lbl">Wind-down</div><input class="field" type="time" id="setWind" value="${esc(s.windDown || '22:30')}"></div></div>` +
     `<div class="lbl">A recent payday (a Monday)</div><input class="field" type="date" id="setPay" value="${esc(s.payday || '')}">` +
     `<p class="fine">Turns on the Seb-month lens next to the real date. Leave empty to keep it off.</p>` +
-    `<button class="pbtn" data-act="saveSettings" style="margin-top:6px">Keep these</button>` +
+    `<div class="lbl">Your morning, one per line</div><textarea class="field" id="setMorning" rows="3" placeholder="things you do first thing">${esc((s.morning || []).join('\n'))}</textarea>` +
+    `<div class="lbl">Winding down, one per line</div><textarea class="field" id="setEvening" rows="2" placeholder="things you do before bed">${esc((s.evening || []).join('\n'))}</textarea>` +
+    `<div class="grid2"><div><div class="lbl">Free day</div><select class="field" id="setFree">${['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((d, i) => `<option value="${i}"${(s.freeDay ?? 1) == i ? ' selected' : ''}>${d}</option>`).join('')}</select></div>` +
+    `<div><div class="lbl">Meals, getting ready</div><input class="field" type="number" step="0.5" min="0" max="6" id="setMeals" value="${esc(s.meals ?? 1.5)}"></div></div>` +
+    `<button class="pbtn" data-act="saveSettings" style="margin-top:14px">Keep these</button>` +
+    ((state.tabs || []).length ? `<div class="lbl">In the bar</div>` + state.tabs.map(t => `<div class="pk"><div class="d">${t}</div><button class="w" data-act="tabRemove" data-k="${t}">take out</button></div>`).join('') : '') +
     `<div class="lbl">The sky</div><p class="fine" style="margin:0">${s.place ? 'It follows the real sun where you are.' : 'A plain day for now: sunrise at 7, sunset at 6:30.'}</p>` +
     `<div class="opts"><button class="opt" data-act="locate">${s.place ? 'update my place' : 'follow my real sun'}</button>${s.place ? '<button class="opt" data-act="unlocate">forget my place</button>' : ''}</div>` +
     `<div class="lbl">Your sayings</div><p class="fine" style="margin:0">${state.sayings.length ? state.sayings.length + ' of your own, plus the pinned one.' : 'Only the pinned one so far.'}</p>` +
@@ -133,6 +142,8 @@ function breathe() {
 const shell = {
   close: () => closeSheet(),
   tab: (c, el) => go(el.dataset.k),
+  tabAdd: async (c, el) => { closeSheet(); await write('tab.add', { key: el.dataset.k }, el.dataset.k[0].toUpperCase() + el.dataset.k.slice(1) + ' is in the bar now', 'tick'); go(el.dataset.k); },
+  tabRemove: async (c, el) => { closeSheet(); if (current === el.dataset.k) current = 'home'; await write('tab.remove', { key: el.dataset.k }, 'Taken out of the bar'); },
   settings: () => settingsSheet(),
   saveSettings: async () => {
     const d = {}, s = state.settings;
@@ -142,6 +153,12 @@ const shell = {
     if (wake && wake !== (s.wake || '07:00')) d.wake = wake;
     if (wind && wind !== (s.windDown || '22:30')) d.windDown = wind;
     if (pay !== (s.payday || '')) d.payday = pay || null;
+    const lines = id => $(id).value.split('\n').map(x => x.trim()).filter(Boolean);
+    const morning = lines('setMorning'), evening = lines('setEvening'), free = +$('setFree').value, meals = +$('setMeals').value;
+    if (morning.join('\n') !== (s.morning || []).join('\n')) d.morning = morning;
+    if (evening.join('\n') !== (s.evening || []).join('\n')) d.evening = evening;
+    if (free !== (s.freeDay ?? 1)) d.freeDay = free;
+    if (meals >= 0 && meals !== (s.meals ?? 1.5)) d.meals = meals;
     closeSheet();
     if (Object.keys(d).length) await write('settings', d, 'Kept');
     if (say) await write('saying.add', { text: say, kind: 'saying' }, 'Saying kept');
@@ -177,7 +194,8 @@ document.addEventListener('click', async ev => {
   const a = ev.target.closest('[data-act]');
   if (!a) return;
   const act = a.dataset.act, place = PLACES[current] || home;
-  const fn = (place.actions && place.actions[act]) || home.actions[act] || shell[act];
+  // The place on screen first, then any place (a Home card can park a thought), then the shell.
+  const fn = (place.actions && place.actions[act]) || Object.values(PLACES).map(p => p.actions && p.actions[act]).find(Boolean) || shell[act];
   if (fn) await fn(ctx(), a);
 });
 

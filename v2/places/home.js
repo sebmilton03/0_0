@@ -5,6 +5,7 @@
 import { esc, openSheet, closeSheet, buzz, stars } from '../ui.js';
 import { PILLARS, ORDER, SLEEP, where, nextLine, lastWeek } from '../engines/pillars.js';
 import { seb, checkSettings, weekday } from '../engines/sebdate.js';
+import { atWork, tomorrowLine, parked, span } from '../engines/week.js';
 
 export const PINNED = 'Who are you, where are you going, and breathe.';
 const DAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
@@ -36,8 +37,25 @@ export function render(ctx) {
   ctx.face(w.chillin && w.pillars.length ? '-_-' : '0_0');
   if (m.phase === 'night') return night(ctx);
   if (m.phase === 'evening') return evening(ctx, w);
-  if (w.pillars.length && w.chillin) return chillin(ctx, w);
-  return morning(ctx, w);
+  const work = atWork(s, m.day, m.now);
+  if (work) return working(ctx, work);
+  const due = parked(s, m.day).due;
+  if (w.pillars.length && w.chillin && !due.length) return chillin(ctx, w);
+  return morning(ctx, w, due);
+}
+
+// At work, Home shrinks to one line, a soft bar for the shift and a place to park a thought.
+function working(ctx, b) {
+  const { m } = ctx, left = b.left, h = Math.floor(left), q = Math.round((left - h) * 4);
+  const words = (h ? h : '') + (q === 1 ? '¼' : q === 2 ? '½' : q === 3 ? '¾' : q === 4 ? '1' : '') || 'less than a quarter';
+  return { sky: m.sky, html:
+    `<div class="top">${dateTop(m.day).replace(/ · .*<\/span>/, ' · ' + esc(clock(m.now)) + '</span>')}<span class="r">at work ${faceBtn(ctx.faceNow())}</span></div>` +
+    `<div class="say" style="font-size:34px;margin-top:40px">At work.</div>` +
+    `<p class="fine" style="font-size:15px;margin-top:8px;color:rgba(255,255,255,.75)">About ${words} hour${left > 1.1 ? 's' : ''} to go.</p>` +
+    `<div style="position:relative;height:12px;border-radius:6px;background:rgba(255,255,255,.08);margin-top:26px"><i style="position:absolute;left:0;top:0;bottom:0;width:${b.done * 100}%;border-radius:6px;background:linear-gradient(90deg,#e8875a,#ffcf9e)"></i><b style="position:absolute;top:-5px;left:${b.done * 100}%;width:4px;height:22px;margin-left:-2px;border-radius:2px;background:#fff"></b></div>` +
+    `<div class="fine" style="display:flex;justify-content:space-between;margin-top:6px"><span>${esc(span(b).split(' to ')[0])}</span><span>${esc(span(b).split(' to ')[1])}</span></div>` +
+    `<div class="clear" style="margin-top:40px">Nothing else needs you right now.</div>` +
+    `<button class="calm" data-act="park" style="margin-top:60px"><i>✎</i>Something on your mind? Park it for later.</button>` };
 }
 
 function wia(w) {
@@ -57,14 +75,15 @@ function nextCard(p) {
   return `<div class="next"><small>Next thing that needs you</small><b>${esc(l.title)}</b><p>${esc(l.sub)}</p>${acts ? `<div class="opts">${acts}</div>` : ''}</div>`;
 }
 
-function morning(ctx, w) {
+function morning(ctx, w, due = []) {
   const { state: s, m } = ctx;
   let body;
   if (!w.pillars.length) {
     body = `<div class="empty">Nothing here yet. That’s a fine place to start.<button class="link" data-act="add">+ add your first place</button></div>`;
   } else {
-    body = wia(w) + (w.next ? nextCard(w.next) : '');
+    body = wia(w) + (w.next ? nextCard(w.next) : due.length ? parkedCard(due) : '');
   }
+  if (!w.pillars.length && due.length) body += parkedCard(due);
   return {
     sky: m.sky, html:
       `<div class="top">${dateTop(m.day)}<span class="r">${sebChip(s, m.day)}${faceBtn(ctx.faceNow())}</span></div>` +
@@ -72,6 +91,11 @@ function morning(ctx, w) {
       `<div class="bdot" id="light" role="button" aria-label="Hold to breathe"><i></i><u></u></div>` + body +
       (w.pillars.length ? `<div class="clear">${w.next ? 'Everything else is fine.' : 'All is well.'}<div class="fine"><button data-act="all">checked everything · tap to see it all</button></div></div>` : ''),
   };
+}
+
+function parkedCard(due) {
+  return `<div class="next"><small>Waiting for today</small><b>${due.length === 1 ? esc(due[0].text) : due.length + ' parked thoughts are back'}</b>` +
+    `<p>You parked ${due.length === 1 ? 'it' : 'them'} for today.</p><div class="opts">${due.length === 1 ? `<button class="opt" data-act="unpark" data-id="${due[0].id}">done</button>` : ''}<button class="opt" data-act="tab" data-k="day">see in Day</button></div></div>`;
 }
 
 function chillin(ctx, w) {
@@ -108,8 +132,13 @@ function evening(ctx, w) {
     (held ? `<div class="held">${held}</div>` : `<p class="fine" style="margin-top:10px">A quiet one. That counts too.</p>`) +
     `<label class="grat" style="display:block"><small>Today I’m grateful for</small>` +
     (d.grateful ? esc(d.grateful) : `<input id="grateful" maxlength="140" placeholder="one line, in your words" enterkeyhint="done">`) + `</label>` +
+    tomorrow(s, m.day) +
     `<button class="done" data-act="done">Done for today</button>` +
     `<p class="fine center" style="margin-top:12px">Nothing will ask for you until morning.</p>` };
+}
+function tomorrow(s, day) {
+  const t = tomorrowLine(s, day);
+  return t ? `<div class="tmr">Tomorrow starts with <b>${t.map(esc).join('</b>, then <b>')}</b>.</div>` : '';
 }
 
 function night(ctx) {
@@ -118,6 +147,7 @@ function night(ctx) {
   const one = s.places.includes('sleep') ? 'Phone sleeps outside the bedroom tonight.' : 'Put the day down. It’ll keep.';
   return { sky: 'winddown', bare: true, html:
     `<div class="wd"><div class="when">${esc(clock(m.now))} · wind down</div><div class="one">${one}</div>` +
+    (() => { const t = tomorrowLine(s, m.day); return t ? `<div class="tom">Tomorrow starts with<br><span>${t.map(esc).join('</span>, then <span>')}</span>.</div>` : ''; })() +
     `<div class="bye">Goodnight${hello(s)}.<button class="peek" data-act="awake">not yet · open 0_0</button></div></div>` };
 }
 const clock = d => d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).toLowerCase();
@@ -158,10 +188,14 @@ export function pillarSheet(ctx, key) {
     `<p class="fine center" style="margin-top:16px"><button data-act="remove" data-k="${key}">take ${P.name} off Home</button></p>`);
 }
 
+const TAB_WORDS = { day: 'Today as a few cues, the week in hours, park it.', money: 'A feeling, then hours, then Dam Day.', grow: 'One habit at a time. Sleep first.', study: 'A weekly target that fits, and the list.' };
 export function addSheet(ctx) {
   const left = ORDER.filter(k => !ctx.state.places.includes(k));
+  const tabs = ctx.places.filter(t => t !== 'home' && !(ctx.state.tabs || []).includes(t));
   openSheet(`<div class="lbl">Add a place</div><div class="say">One at a time is plenty.</div><p class="fine" style="margin-top:6px">Each one costs a tap or two, never more.</p>` +
-    left.map(k => `<div class="pk"><div class="d"><b style="font-size:15px">${PILLARS[k].name}</b><br><span class="fine">${esc(PILLARS[k].question)} ${esc(PILLARS[k].feed)}</span></div><button class="pbtn" style="padding:8px 14px;font-size:13px" data-act="place" data-k="${k}">add</button></div>`).join(''));
+    (left.length ? `<div class="lbl">On Home</div>` : '') +
+    left.map(k => `<div class="pk"><div class="d"><b style="font-size:15px">${PILLARS[k].name}</b><br><span class="fine">${esc(PILLARS[k].question)} ${esc(PILLARS[k].feed)}</span></div><button class="pbtn" style="padding:8px 14px;font-size:13px" data-act="place" data-k="${k}">add</button></div>`).join('') +
+    (tabs.length ? `<div class="lbl">In the bar</div>` + tabs.map(t => `<div class="pk"><div class="d"><b style="font-size:15px">${t[0].toUpperCase() + t.slice(1)}</b><br><span class="fine">${esc(TAB_WORDS[t] || '')}</span></div><button class="pbtn" style="padding:8px 14px;font-size:13px" data-act="tabAdd" data-k="${t}">add</button></div>`).join('') : ''));
 }
 
 export function allSheet(ctx) {

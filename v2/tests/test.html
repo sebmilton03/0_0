@@ -31,6 +31,7 @@ import * as D from '../engines/sebdate.js';
 import { sunTimes, sky } from '../engines/sky.js';
 import { where, lastWeek } from '../engines/pillars.js';
 import { APP as HOME, parseSayings } from '../state.js';
+import * as W from '../engines/week.js';
 
 const results = [];
 let group = '';
@@ -57,6 +58,9 @@ const APP = {
   summarize: s => ({ hours: s.hours, shifts: s.shifts }),
 };
 const hoursOf = async log => replay(await log.all(), APP.reducers, APP.init).hours;
+// A made-up event for replaying straight into a state, without a database.
+let evn = 0;
+const ev = (kind, data) => ({ id: 't' + String(++evn).padStart(15, '0'), at: '2026-10-16T12:00:00.000-07:00', kind, data, source: 'test' });
 
 async function run() {
   // ---------------------------------------------------------------- the log
@@ -313,6 +317,43 @@ async function run() {
     eq('the sleep sheet’s seven days, oldest first', seven.map(d => d.v), [0, 0, 0, 0, 1, 0, 3]);
     const file = '# sayings\n\nintro line\n\n## Mantras\n\n- made-up mantra one\n\n## Advice\n\n- made-up advice\n\n## Build note\n\n- not a saying\n';
     eq('a sayings file is read on the phone: headings become kinds, build notes are skipped', parseSayings(file), [{ text: 'made-up mantra one', kind: 'mantra' }, { text: 'made-up advice', kind: 'advice' }]);
+  }
+  // ---------------------------------------------------------------- day
+  group = 'Day: the week, honestly';
+  {
+    // A made-up week: a job Thu-Sun 10 to 8, class Mon/Wed 10 to 12, study blocks, the Monday reset.
+    const sample = replay([
+      ev('block.set', { id: 'job', kind: 'work', label: 'Pizza place', days: [3, 4, 5, 6], from: '10:00', to: '20:00' }),
+      ev('block.set', { id: 'cls', kind: 'class', label: 'Chem', days: [0, 2], from: '10:00', to: '12:00' }),
+      ev('block.set', { id: 'st', kind: 'study', label: '', days: [0, 1, 2], from: '13:00', to: '17:00' }),
+      ev('block.set', { id: 'rs', kind: 'reset', label: '', days: [0], from: '17:00', to: '19:00' }),
+      ev('settings', { morning: ['Write good morning', 'Vitamins'], evening: ['Phone charges outside the bedroom'] }),
+    ], HOME.reducers, HOME.init);
+    const wk = W.weekHours(sample, '2026-10-21');
+    eq('40 hours of work, 12 of study', [wk.work, wk.study], [40, 12]);
+    eq('sleep is worked out from wind-down and morning: 8½ hours', W.sleepHours(sample.settings), 8.5);
+    eq('every day adds up to 24 hours', wk.days.every(d => Math.abs(W.STACK.reduce((t, k) => t + d[k], 0) - 24) < 1e-9), true);
+    eq('a work day leaves 4 free hours (24 − 8½ sleep − 10 work − 1½ meals)', wk.days[3].free, 4);
+    eq('the week has 40 free hours (Mon 6, Tue 10, Wed 8, 4 on each work day)', wk.free, 40);
+    eq('Thursday’s chain: morning, the job, wind down', W.cues(sample, '2026-10-22').map(c => c.title), ['Morning', 'Pizza place', 'Wind down']);
+    eq('the job shows its hours: 10 hr', W.cues(sample, '2026-10-22')[1].right, '10 hr');
+    eq('a ticked line shows as done', W.cues({ ...sample, cues: { '2026-10-22': { m0: true } } }, '2026-10-22')[0].lines.map(l => l.done), [true, false]);
+    eq('the focus habit leads the wind-down cue', W.cues(sample, '2026-10-22', { id: 'phone', text: 'Phone outside', right: '9 of 14' }).pop().lines[0].text, 'Phone outside');
+    eq('at 2:15 on a work day you’re at work, about 5¾ hours to go', (() => { const a = W.atWork(sample, '2026-10-22', new Date(2026, 9, 22, 14, 15)); return [!!a, a.left]; })(), [true, 5.75]);
+    eq('at 9 PM you’re not', W.atWork(sample, '2026-10-22', new Date(2026, 9, 22, 21, 0)), null);
+    eq('tomorrow starts with the first morning line, then the first block', W.tomorrowLine(sample, '2026-10-21'), ['Write good morning', 'Pizza place at 10']);
+    eq('just this week: a one-off adds; a skip drops a day', [W.blocksOn({ ...sample, once: [{ id: 'x', kind: 'gym', date: '2026-10-20', from: '09:00', to: '10:00' }] }, '2026-10-20').length, W.blocksOn({ ...sample, skips: [{ id: 'job', date: '2026-10-22' }] }, '2026-10-22').length], [2, 0]);
+  }
+  group = 'Day: park it';
+  {
+    eq('parked on a Wednesday for Sunday comes back Sunday', W.waitsUntil('sunday', '2026-10-21'), '2026-10-25');
+    eq('…for the Monday reset, next Monday', W.waitsUntil('monday', '2026-10-21'), '2026-10-26');
+    eq('…for the free day (Tuesday by default), next Tuesday', W.waitsUntil('free', '2026-10-21'), '2026-10-27');
+    eq('…for Dam Day, the last day of the month', W.waitsUntil('damday', '2026-10-21'), '2026-10-31');
+    eq('…for a date, that date', W.waitsUntil('2026-11-03', '2026-10-21'), '2026-11-03');
+    const s = { parked: [{ id: 'a', text: 'oil change', until: 'sunday', on: '2026-10-21' }, { id: 'b', text: 'done one', until: 'monday', on: '2026-10-21', done: true }] };
+    eq('it waits, not lost, until its day', [W.parked(s, '2026-10-22').waiting.length, W.parked(s, '2026-10-22').due.length], [1, 0]);
+    eq('on its day it comes back; done ones never do', [W.parked(s, '2026-10-25').due.map(p => p.id), W.parked(s, '2026-10-30').due.map(p => p.id)], [['a'], ['a']]);
   }
 }
 
