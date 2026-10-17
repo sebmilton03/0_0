@@ -12,9 +12,10 @@ import * as home from './places/home.js';
 import * as day from './places/day.js';
 import * as moneyPlace from './places/money.js';
 import * as grow from './places/grow.js';
+import * as study from './places/study.js';
 import { focusOf, byStatus, cueLine } from './engines/steps.js';
 
-export const PLACES = { home, day, money: moneyPlace, grow };
+export const PLACES = { home, day, money: moneyPlace, grow, study };
 export const TABS = ['home', 'day', 'money', 'grow', 'study'];
 
 let log, store, state, awake = false, face = '0_0', current = 'home';
@@ -60,7 +61,9 @@ function ctx() {
 // What places work out for Home's pillars: Money's breathing room, Study's week.
 function extraFor(day) {
   const v = moneyPlace.moneyView(state, day);
-  return { money: v.ready ? { ready: true, room: v.room, damDone: (state.money || {}).damDone || [] } : { ready: false } };
+  const st = state.study || {};
+  return { money: v.ready ? { ready: true, room: v.room, damDone: (state.money || {}).damDone || [] } : { ready: false },
+    study: st.target ? { target: st.target, days: st.days || {} } : null };
 }
 function paint(skyName) {
   const el = $('sky');

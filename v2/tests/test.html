@@ -426,6 +426,31 @@ async function run() {
     eq('the road keeps its stops in order, and remembers when one is reached', road.road.map(x => x.text + (x.reached ? ' ✓' : '')), ['Vault full ✓', 'Loan gone']);
   }
 
+  // ---------------------------------------------------------------- study
+  group = 'Study: a target that fits, and the list';
+  {
+    const SD = await import('../engines/study.js');
+    const s = replay([
+      ev('study.target', { hours: 12 }),
+      ev('block.set', { id: 'st', kind: 'study', label: 'Chem problems', days: [0, 2], from: '13:00', to: '16:00' }),
+      ev('study.add', { date: '2026-10-19', mins: 150 }), ev('study.start', { at: Date.parse('2026-10-20T09:00:00') }), ev('study.stop', { date: '2026-10-20', mins: 90 }),
+      ev('task.add', { id: 'f', title: 'Final study', cls: 'Chem' }), ev('task.add', { id: 'c4', title: 'Chapter 4', parent: 'f' }),
+      ev('task.add', { id: 'p1', title: 'Problems 1-20', parent: 'c4' }), ev('task.add', { id: 'p2', title: 'Problems 21-40', parent: 'c4', due: '2026-10-19' }),
+      ev('task.done', { id: 'p1', done: true }),
+    ], HOME.reducers, HOME.init);
+    const w = SD.week(s, '2026-10-21');
+    eq('4 hours studied this week, of a 12-hour target', [w.hours, w.target], [4, 12]);
+    eq('4 done, Wednesday’s 3-hour block still ahead: 5 hours aren’t on the calendar yet', [w.planned, w.unplanned], [6, 5]);
+    eq('a parent counts what’s inside it: "1 of 2"', SD.counts(s.study.tasks, 'f'), { done: 1, of: 2 });
+    eq('class carries down to the problems', SD.classOf(s.study.tasks, s.study.tasks.find(t => t.id === 'p2')), 'Chem');
+    eq('overdue goes amber (a soft word), never red', SD.dueState(s.study.tasks.find(t => t.id === 'p2'), '2026-10-21'), 'overdue');
+    const all = replay([ev('task.add', { id: 'f', title: 'Final' }), ev('task.add', { id: 'a', title: 'a', parent: 'f' }), ev('task.add', { id: 'b', title: 'b', parent: 'f' }), ev('task.done', { id: 'f', done: true })], HOME.reducers, HOME.init);
+    eq('ticking a parent ticks everything inside it', all.study.tasks.map(t => t.done), [true, true, true]);
+    eq('a timer left running is capped at 8 hours', SD.runningMins({ running: 1000 }, 1000 + 20 * 3600e3), 480);
+    eq('the School pillar reads Study’s week: on path by Tuesday', where({ ...HOME.init, places: ['school'] }, '2026-10-20', 9, { study: { target: 12, days: s.study.days } }).pillars[0].word, 'on path');
+    eq('…and gently "catching up" if Wednesday comes with no more', where({ ...HOME.init, places: ['school'] }, '2026-10-21', 9, { study: { target: 12, days: s.study.days } }).pillars[0].word, 'catching up');
+  }
+
 }
 
 const progress = setInterval(() => { document.getElementById('sum').textContent = 'Running… ' + group + ' (' + results.length + ' so far)'; }, 200);

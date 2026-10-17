@@ -62,8 +62,8 @@ function planSheet(ctx) {
     `<button class="pbtn" style="margin-top:16px" data-act="block">+ add a block</button>`);
 }
 
-function blockSheet(ctx, id) {
-  const s = ctx.state, b = (id && (s.blocks[id] || s.once.find(x => x.id === id))) || { kind: 'work', days: [], from: '10:00', to: '20:00' };
+export function blockSheet(ctx, id, preset = {}) {
+  const s = ctx.state, b = (id && (s.blocks[id] || s.once.find(x => x.id === id))) || { kind: 'work', days: [], from: '10:00', to: '20:00', ...preset };
   const days = b.date ? [weekday(b.date)] : b.days;
   openSheet(`<div class="lbl">${id ? 'Change a block' : 'Add a block'}</div><div class="say">${id ? esc(b.label || KINDS[b.kind].name) : 'What is it?'}</div>` +
     `<div class="opts" id="bkind">${Object.keys(KINDS).map(k => `<button class="opt${b.kind === k ? ' on' : ''}" data-act="pick" data-group="bkind" data-v="${k}">${KINDS[k].name}</button>`).join('')}</div>` +

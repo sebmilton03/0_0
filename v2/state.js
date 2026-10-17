@@ -3,6 +3,8 @@
 
 import { EMPTY as EMPTY_MONEY } from './engines/money.js';
 const M = s => s.money || EMPTY_MONEY;
+const ST = s => s.study || { target: 0, days: {}, running: null, tasks: [] };
+const under = (tasks, id) => tasks.filter(t => t.parent === id).flatMap(c => [c.id, ...under(tasks, c.id)]);
 const burner = hs => Object.fromEntries(Object.entries(hs || {}).map(([k, h]) => [k, h.status === 'focus' ? { ...h, status: 'backburner' } : h]));
 
 export const APP = {
@@ -67,6 +69,21 @@ export const APP = {
     'stop.add': (s, d) => ({ ...s, road: [...s.road.filter(x => x.id !== d.id), { id: d.id, text: d.text }] }),
     'stop.reached': (s, d) => ({ ...s, road: s.road.map(x => (x.id === d.id ? { ...x, reached: d.date } : x)) }),
     'stop.remove': (s, d) => ({ ...s, road: s.road.filter(x => x.id !== d.id) }),
+    // Study. Minutes per day, a timer that runs off a timestamp, and a list that nests.
+    'study.target': (s, d) => ({ ...s, study: { ...ST(s), target: +d.hours } }),
+    'study.start': (s, d) => ({ ...s, study: { ...ST(s), running: d.at } }),
+    'study.stop': (s, d) => { const st = ST(s); return { ...s, study: { ...st, running: null, days: { ...st.days, [d.date]: Math.max(0, (st.days[d.date] || 0) + (+d.mins || 0)) } } }; },
+    'study.add': (s, d) => { const st = ST(s); return { ...s, study: { ...st, days: { ...st.days, [d.date]: Math.max(0, (st.days[d.date] || 0) + (+d.mins || 0)) } } }; },
+    'study.import': (s, d) => { const st = ST(s), days = { ...st.days };
+      for (const [k, v] of Object.entries(d.days || {})) days[k] = Math.max(days[k] || 0, +v || 0);
+      const have = new Set(st.tasks.map(t => t.id));
+      return { ...s, study: { ...st, days, imported: true, tasks: [...st.tasks, ...(d.tasks || []).filter(t => !have.has(t.id))] } }; },
+    'task.add': (s, d) => { const st = ST(s); return { ...s, study: { ...st, tasks: [...st.tasks, { id: d.id, title: d.title, cls: d.cls || '', due: d.due || '', doOn: d.doOn || '', pri: d.pri || '', parent: d.parent || null, done: false }] } }; },
+    'task.edit': (s, d) => { const st = ST(s); return { ...s, study: { ...st, tasks: st.tasks.map(t => (t.id === d.id ? { ...t, ...d.set } : t)) } }; },
+    // Ticking a thing ticks everything inside it.
+    'task.done': (s, d) => { const st = ST(s), ids = new Set([d.id, ...under(st.tasks, d.id)]);
+      return { ...s, study: { ...st, tasks: st.tasks.map(t => (ids.has(t.id) ? { ...t, done: !!d.done } : t)) } }; },
+    'task.remove': (s, d) => { const st = ST(s), ids = new Set([d.id, ...under(st.tasks, d.id)]); return { ...s, study: { ...st, tasks: st.tasks.filter(t => !ids.has(t.id)) } }; },
     // A copy of what the v1 apps had saved, taken once, quietly. Kept so nothing is lost; places bring in what they need.
     'v1-archive': (s, d, e) => ({ ...s, archived: { at: e.at, id: e.id, keys: Object.keys(d.keys || {}) } }),
   },
