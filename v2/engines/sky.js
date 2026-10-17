@@ -1,6 +1,6 @@
 // The sky behind every screen follows the real sun, worked out offline.
 // Sun math is the standard low-precision solar model (the one SunCalc uses): good to a minute or two.
-// Times come back as real moments (milliseconds); the screens show them in local time.
+// The sky itself is one of calm.html's skies, picked by the sun's height: dawn, day, dusk or night.
 // With no place set, the sky uses a plain 7:00 sunrise and 18:30 sunset.
 
 const RAD = Math.PI / 180, DAY = 864e5, J1970 = 2440588, J2000 = 2451545, OBLIQ = RAD * 23.4397;
@@ -39,30 +39,16 @@ export function sunTimes(iso, lat, lon) {
   return { rise: fromJulian(noon - (set - noon)), noon: fromJulian(noon), set: fromJulian(set) };
 }
 
-/* ---------- The sky's colours ----------
-   Keyed by the sun's height. Mornings run indigo to peach, days are blue, evenings dusk into violet,
-   nights are deep navy with stars. After wind-down the whole thing turns warm and dim instead. */
-const MORNING = [   // [sun altitude, top, bottom]
-  [-18, '#0b0d1f', '#171a36'], [-6, '#1c1f4d', '#5b4a7a'], [0, '#2a2f6b', '#c98a78'],
-  [8, '#33417f', '#e8a87e'], [20, '#2d5394', '#8fb0d8'], [40, '#24589e', '#6d97cf'],
-];
-const EVENING = [
-  [-18, '#0b0d1f', '#171a36'], [-6, '#16183f', '#3d2f5e'], [0, '#22265a', '#a0627a'],
-  [8, '#2b3a78', '#d89a78'], [20, '#2d5394', '#8fb0d8'], [40, '#24589e', '#6d97cf'],
-];
-const WIND_DOWN = { top: '#120c08', bottom: '#2a1a10', stars: false, phase: 'winddown' };
-
-const hex = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16));
-const mix = (a, b, t) => '#' + hex(a).map((v, i) => Math.round(v + (hex(b)[i] - v) * t).toString(16).padStart(2, '0')).join('');
-function blend(stops, alt) {
-  if (alt <= stops[0][0]) return { top: stops[0][1], bottom: stops[0][2] };
-  for (let i = 1; i < stops.length; i++) {
-    const [a1, t1, b1] = stops[i - 1], [a2, t2, b2] = stops[i];
-    if (alt <= a2) { const t = (alt - a1) / (a2 - a1); return { top: mix(t1, t2, t), bottom: mix(b1, b2, t) }; }
-  }
-  const last = stops[stops.length - 1];
-  return { top: last[1], bottom: last[2] };
-}
+/** calm.html's skies. `top` is the status-bar colour. */
+export const SKIES = {
+  dawn: { top: '#0e1430', stars: [28, 330] },
+  day: { top: '#14234a', stars: null },
+  dusk: { top: '#120f2a', stars: [16, 200] },
+  night: { top: '#090b1a', stars: [70, 844] },
+  golden: { top: '#141a44', stars: [18, 260] },
+  tide: { top: '#0e1430', stars: null },
+  winddown: { top: '#0d0906', stars: null },
+};
 
 /** A pretend sun for when no place is set: up at 7:00, down at 18:30, 45° at its highest. */
 function plainAltitude(now) {
@@ -72,12 +58,11 @@ function plainAltitude(now) {
 
 /**
  * The sky for a moment. place = { lat, lon } or null. windDown = true after wind-down time.
- * Returns { top, bottom, stars, phase, altitude }.
+ * Returns { phase, top, stars, altitude }: phase is 'dawn', 'day', 'dusk', 'night' or 'winddown'.
  */
 export function sky(now = new Date(), place = null, windDown = false) {
-  if (windDown) return { ...WIND_DOWN, altitude: null };
+  if (windDown) return { phase: 'winddown', ...SKIES.winddown, altitude: null };
   const alt = place ? sunAltitude(now.getTime(), place.lat, place.lon) : plainAltitude(now);
-  const morning = now.getHours() < 12, c = blend(morning ? MORNING : EVENING, alt);
-  const phase = alt < -6 ? 'night' : alt < 8 ? (morning ? 'dawn' : 'dusk') : 'day';
-  return { ...c, stars: alt < -4, phase, altitude: alt };
+  const phase = alt < -6 ? 'night' : alt < 12 ? (now.getHours() < 12 ? 'dawn' : 'dusk') : 'day';
+  return { phase, ...SKIES[phase], altitude: alt };
 }

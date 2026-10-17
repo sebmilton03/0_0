@@ -29,8 +29,8 @@ import { replay, effective, createStore, makeCheckpoint, verifyCheckpoint } from
 import { exportLog, importLog, check, backupName, persist } from '../core/backup.js';
 import * as D from '../engines/sebdate.js';
 import { sunTimes, sky } from '../engines/sky.js';
-import { where } from '../engines/pillars.js';
-import { APP as HOME } from '../state.js';
+import { where, lastWeek } from '../engines/pillars.js';
+import { APP as HOME, parseSayings } from '../state.js';
 
 const results = [];
 let group = '';
@@ -276,7 +276,8 @@ async function run() {
     yes('Dec 21: sunrise about 7:51 AM PST (15:51 UTC)', near(dec.rise, Date.UTC(2026, 11, 21, 15, 51)), new Date(dec.rise).toISOString());
     yes('Dec 21: sunset about 4:30 PM PST (00:30 UTC next day)', near(dec.set, Date.UTC(2026, 11, 22, 0, 30)), new Date(dec.set).toISOString());
     eq('noon in June is day', sky(new Date(jun.noon), P).phase, 'day');
-    eq('two hours after sunset is night, with stars', [sky(new Date(jun.set + 2 * 36e5), P).phase, sky(new Date(jun.set + 2 * 36e5), P).stars], ['night', true]);
+    eq('two hours after sunset is night, with stars', [sky(new Date(jun.set + 2 * 36e5), P).phase, !!sky(new Date(jun.set + 2 * 36e5), P).stars], ['night', true]);
+    eq('just after sunrise is dawn; just before sunset is dusk', [sky(new Date(jun.rise + 30 * 60e3), P).phase, sky(new Date(jun.set - 30 * 60e3), P).phase], ['dawn', 'dusk']);
     eq('after wind-down the sky turns warm and dim', sky(new Date(), P, true).phase, 'winddown');
     eq('with no place set, midnight is still night', sky(new Date(2026, 9, 16, 0, 30)).phase, 'night');
   }
@@ -284,24 +285,34 @@ async function run() {
   // ---------------------------------------------------------------- pillars
   group = 'Home: where I am, and the next thing';
   {
-    const base = { ...HOME.init, places: ['home', 'money', 'food', 'school', 'sleep'] };
+    const base = { ...HOME.init, places: ['home', 'money', 'food', 'school', 'sleep', 'people'] };
     const study = { target: 12, days: { '2026-10-12': 120, '2026-10-13': 120, '2026-10-14': 60 } };   // 5 hours by Wednesday
-    const valley = { split: '2026-10-31', kind: 'ok', note: '' };
-    const w0 = where(base, { valleyLine: valley, studyState: study }, '2026-10-14', 8);
+    const money = { ready: true, room: 30, damDone: [] };
+    const full = { ...base, money, study };
+    const w0 = where(full, '2026-10-14', 8);
     eq('a fresh week: reset and prep need you, sleep asks first', w0.next.key, 'sleep');
-    eq('…and the words say so', w0.pillars.map(p => p.word), ['reset day', 'steady', 'prep day', 'on path', 'not yet']);
-    const s1 = replay([], HOME.reducers, base);
-    const done = { ...s1, sleep: { '2026-10-14': 'okay' }, ticks: { home: ['2026-10-12'], food: ['2026-10-13'] } };
-    const w1 = where(done, { valleyLine: valley, studyState: study }, '2026-10-14', 8);
+    eq('…and the words say so (People waits for Sunday)', w0.pillars.map(p => p.word), ['reset day', 'steady', 'prep day', 'on path', 'not yet', 'this week']);
+    const done = { ...full, sleep: { '2026-10-14': 'okay' }, ticks: { home: ['2026-10-12'], food: ['2026-10-13'] } };
+    const w1 = where(done, '2026-10-14', 8);
     eq('after the taps, nothing needs you: chillin', [w1.chillin, w1.next], [true, null]);
+    eq('…but not "all six" while People hasn’t answered', w1.allGood, false);
     eq('sleep shows the word you tapped', w1.pillars.find(p => p.key === 'sleep').word, 'okay');
-    eq('last week’s reset doesn’t count for this week', where({ ...done, ticks: { home: ['2026-10-11'], food: ['2026-10-13'] } }, { valleyLine: valley, studyState: study }, '2026-10-14', 8).next.key, 'home');
-    eq('Valley saying "heads up" makes money the next thing', where(done, { valleyLine: { ...valley, kind: 'check', note: 'Nov looks $280 short' }, studyState: study }, '2026-10-14', 8).next.key, 'money');
-    eq('Dam Day itself is the next thing', where(done, { valleyLine: valley, studyState: study }, '2026-10-31', 8).next.detail, 'Dam Day: time to split.');
-    eq('an unanswered sleep stops asking after 2 PM', where({ ...done, sleep: {} }, { valleyLine: valley, studyState: study }, '2026-10-14', 15).next, null);
-    eq('study behind pace says "catching up" but never nags', (() => { const w = where({ ...done, sleep: { '2026-10-16': 'rested' } }, { valleyLine: valley, studyState: { target: 12, days: {} } }, '2026-10-16', 9); return [w.pillars.find(p => p.key === 'school').word, w.chillin]; })(), ['catching up', true]);
-    eq('your own words replace the defaults', where({ ...done, settings: { words: { home: { good: 'cozy' } } } }, null, '2026-10-14', 8).pillars[0].word, 'cozy');
-    eq('starts blank: no places, nothing on screen', where(HOME.init, null, '2026-10-14', 8).pillars, []);
+    eq('last week’s reset doesn’t count for this week', where({ ...done, ticks: { home: ['2026-10-11'], food: ['2026-10-13'] } }, '2026-10-14', 8).next.key, 'home');
+    eq('a month short on hours makes money the next thing', where({ ...done, money: { ...money, room: -12 } }, '2026-10-14', 8).next.key, 'money');
+    eq('Dam Day (the last day of the month) comes before everything', where({ ...done, sleep: {} }, '2026-10-31', 8).next.detail, 'Dam Day: time to split.');
+    eq('…and once it’s done, it stops asking', where({ ...done, sleep: { '2026-10-31': 'rested' }, money: { ...money, damDone: ['2026-10'] }, checkins: { people: [{ date: '2026-10-31', answer: 'yes' }] }, ticks: { home: ['2026-10-26'], food: ['2026-10-27'] } }, '2026-10-31', 8).next, null);
+    eq('an unanswered sleep stops asking after 2 PM', where({ ...done, sleep: {} }, '2026-10-14', 15).next, null);
+    eq('study behind pace says "catching up" but never nags', (() => { const w = where({ ...done, sleep: { '2026-10-16': 'rested' }, study: { target: 12, days: {} } }, '2026-10-16', 9); return [w.pillars.find(p => p.key === 'school').word, w.chillin]; })(), ['catching up', true]);
+    eq('your own words replace the defaults', where({ ...done, settings: { words: { home: { good: 'cozy' } } } }, '2026-10-14', 8).pillars[0].word, 'cozy');
+    eq('starts blank: no places, nothing on screen', where(HOME.init, '2026-10-14', 8).pillars, []);
+    eq('no bridges: Money and School say "not set" until v2 has their data', where(base, '2026-10-14', 8).pillars.filter(p => p.quiet).map(p => p.key + ':' + p.word), ['money:not set', 'school:not set', 'people:this week']);
+    eq('People asks on Sunday', where({ ...done, sleep: { '2026-10-18': 'okay' } }, '2026-10-18', 8).next.key, 'people');
+    eq('"yes" makes People connected; with everything good it’s all six', (() => { const w = where({ ...done, sleep: { '2026-10-18': 'rested' }, checkins: { people: [{ date: '2026-10-18', answer: 'yes' }] } }, '2026-10-18', 8); return [w.pillars.find(p => p.key === 'people').word, w.allGood]; })(), ['connected', true]);
+    eq('"not this week" is a quiet week, never a nag', (() => { const w = where({ ...done, sleep: { '2026-10-18': 'rested' }, checkins: { people: [{ date: '2026-10-18', answer: 'no' }] } }, '2026-10-18', 8); return [w.pillars.find(p => p.key === 'people').word, w.chillin]; })(), ['quiet week', true]);
+    const seven = lastWeek({ ...HOME.init, sleep: { '2026-10-14': 'rested', '2026-10-12': 'tired' } }, 'sleep', '2026-10-14');
+    eq('the sleep sheet’s seven days, oldest first', seven.map(d => d.v), [0, 0, 0, 0, 1, 0, 3]);
+    const file = '# sayings\n\nintro line\n\n## Mantras\n\n- made-up mantra one\n\n## Advice\n\n- made-up advice\n\n## Build note\n\n- not a saying\n';
+    eq('a sayings file is read on the phone: headings become kinds, build notes are skipped', parseSayings(file), [{ text: 'made-up mantra one', kind: 'mantra' }, { text: 'made-up advice', kind: 'advice' }]);
   }
 }
 
