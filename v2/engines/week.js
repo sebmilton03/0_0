@@ -90,7 +90,7 @@ export function cues(s, date, focus = null, morningHabits = []) {
 }
 export const fmtHours = h => { const r = Math.round(h * 2) / 2; return Math.trunc(r) + (r % 1 ? '½' : ''); };
 
-/** "Tomorrow starts with good morning ✎, then Domino's at 10." or null. */
+/** "Tomorrow starts with good morning ✎, then work at 10." or null. */
 export function tomorrowLine(s, date) {
   const t = addDays(date, 1), set = s.settings || {}, parts = [];
   if ((set.morning || [])[0]) parts.push(set.morning[0]);
