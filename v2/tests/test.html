@@ -1,0 +1,287 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>0_0 v2 · core check</title>
+<link rel="icon" href="../../icon-192.png">
+<style>
+  body { margin: 0; padding: 24px; background: #0a0a0a; color: #f3f3f3; font: 15px/1.5 system-ui, sans-serif; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; margin: 18px 0 4px; color: #8d8d8d; font-weight: 600; }
+  #sum { margin-bottom: 18px; font-weight: 600; }
+  .ok { color: #3ecf8e; } .bad { color: #e5645e; }
+  li { margin: 4px 0; } code { color: #8d8d8d; word-break: break-all; }
+  ul { padding-left: 20px; margin: 0; }
+</style>
+</head>
+<body>
+<h1>0_0 v2 · core check</h1>
+<p>The log, replay, backups and dates. Every line should be green. It needs a local server
+(ES modules don't load from a plain file), e.g. <code>python -m http.server</code> in the repo, then open
+<code>/v2/tests/test.html</code>. Each test uses its own throwaway database, never the real log.
+The data is made up.</p>
+<p id="sum">Running…</p>
+<div id="out"></div>
+<script type="module">
+import { openLog, dropLog, canonical, stamp, HIDDEN, CORRECTION } from '../core/log.js';
+import { replay, effective, createStore, makeCheckpoint, verifyCheckpoint } from '../core/store.js';
+import { exportLog, importLog, check, backupName, persist } from '../core/backup.js';
+import * as D from '../engines/sebdate.js';
+
+const results = [];
+let group = '';
+const same = (a, b) => canonical(a) === canonical(b);
+function eq(name, got, want) { results.push({ group, name, ok: same(got, want), got, want }); }
+function yes(name, ok, got) { results.push({ group, name, ok: !!ok, got, want: true }); }
+
+// A pretend clock, so events can be written "in September" and "in October".
+let clock = new Date(2026, 8, 3, 9, 0);
+const at = (y, m, d, h = 12) => { clock = new Date(y, m - 1, d, h, 0); };
+const tick = () => { clock = new Date(clock.getTime() + 60000); };
+let dbn = 0;
+const fresh = () => openLog('0_0-v2-test-' + Date.now() + '-' + (++dbn), { now: () => { tick(); return clock; } });
+const opened = [];
+async function newLog() { const l = await fresh(); opened.push(l); return l; }
+
+// A tiny made-up app: shifts add hours, notes get kept.
+const APP = {
+  init: { hours: 0, shifts: 0, notes: [] },
+  reducers: {
+    shift: (s, d) => ({ ...s, hours: s.hours + d.hours, shifts: s.shifts + 1 }),
+    note: (s, d) => ({ ...s, notes: [...s.notes, d.text] }),
+  },
+  summarize: s => ({ hours: s.hours, shifts: s.shifts }),
+};
+const hoursOf = async log => replay(await log.all(), APP.reducers, APP.init).hours;
+
+async function run() {
+  // ---------------------------------------------------------------- the log
+  group = 'The log: nothing written is ever changed';
+  {
+    const log = await newLog();
+    const a = await log.append('shift', { hours: 5 }, 'money');
+    eq('an event has exactly id, at, kind, data, source', Object.keys(a).sort(), ['at', 'data', 'id', 'kind', 'source']);
+    yes('its time is local ISO with an offset', /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}[+-]\d{2}:\d{2}$/.test(a.at), a.at);
+    const b = await log.append('shift', { hours: 3 }, 'money');
+    const c = await log.append('note', { text: 'made-up note' }, 'study');
+    const before = Object.fromEntries((await log.all()).map(e => [e.id, canonical(e)]));
+    const counts = [await log.count()];
+    await log.correct(a.id, { hours: 6 }); counts.push(await log.count());
+    const h = await log.hide(b.id); counts.push(await log.count());
+    await log.undo(h.id); counts.push(await log.count());
+    await importLog(log, await exportLog(log)); counts.push(await log.count());
+    const forged = { ...c, data: { text: 'changed' } };
+    const r = await log.insert([forged]); counts.push(await log.count());
+    const after = Object.fromEntries((await log.all()).map(e => [e.id, canonical(e)]));
+    yes('after a correction, a hide, an undo, an import and a forged copy, every first event is byte-for-byte the same',
+      Object.keys(before).every(id => after[id] === before[id]));
+    eq('a forged copy of an existing id is a conflict, not an overwrite', r.conflicts, [c.id]);
+    eq('the stored event still has the original text', (await log.get(c.id)).data, { text: 'made-up note' });
+    yes('the number of events only ever goes up', counts.every((n, i) => i === 0 || n >= counts[i - 1]), counts);
+    eq('the log offers no way to update or delete', ['update', 'put', 'delete', 'remove', 'clear', 'set'].filter(k => k in log), []);
+    let threw = false; try { a.data.hours = 99; } catch { threw = true; }
+    yes('an event handed back is frozen, so code can’t change it by accident', threw && a.data.hours === 5);
+    const all = await log.all();
+    eq('ids sort in the order things were written', all.map(e => e.id), [...all.map(e => e.id)].sort());
+  }
+  group = 'The log: ephemeral things are never written';
+  {
+    const log = await newLog();
+    const n = await log.count();
+    eq('breathe writes nothing', await log.append('breathe', { secs: 60 }), null);
+    eq('low-tide basics write nothing', await log.append('low-tide', { water: true }), null);
+    eq('the ephemeral kind writes nothing', await log.append('ephemeral', {}), null);
+    eq('the log is still empty', await log.count(), n);
+  }
+
+  // ---------------------------------------------------------------- undo
+  group = 'Undo is just another event';
+  {
+    const log = await newLog();
+    const a = await log.append('shift', { hours: 5 });
+    const b = await log.append('shift', { hours: 3 });
+    eq('two shifts: 8 hours', await hoursOf(log), 8);
+    const u = await log.undo(b.id);
+    eq('undoing a shift writes a hidden event pointing at it', [u.kind, u.data.target], [HIDDEN, b.id]);
+    eq('…and replay skips it: 5 hours', await hoursOf(log), 5);
+    yes('the undone shift is still in the log', !!(await log.get(b.id)));
+    await log.undo(u.id);
+    eq('undoing the undo brings it back: 8 hours', await hoursOf(log), 8);
+    const fix = await log.correct(a.id, { hours: 6 });
+    eq('a correction writes a correction event', [fix.kind, fix.data.target], [CORRECTION, a.id]);
+    eq('…and replay uses the new number: 9 hours', await hoursOf(log), 9);
+    await log.undo(fix.id);
+    eq('undoing the correction goes back to the old number: 8 hours', await hoursOf(log), 8);
+    let threw = false; try { await log.hide('nope'); } catch { threw = true; }
+    yes('hiding an id that isn’t there is refused', threw);
+  }
+
+  // ---------------------------------------------------------------- replay
+  group = 'Replay gives the same state every time';
+  {
+    const log = await newLog();
+    for (let i = 1; i <= 20; i++) await log.append(i % 4 ? 'shift' : 'note', i % 4 ? { hours: i } : { text: 'n' + i });
+    const all = await log.all();
+    await log.hide(all[3].id); await log.correct(all[5].id, { hours: 100 });
+    const events = await log.all(), first = replay(events, APP.reducers, APP.init);
+    eq('replaying twice gives the same state', replay(events, APP.reducers, APP.init), first);
+    const shuffled = [...events].sort(() => Math.random() - 0.5);
+    eq('replaying the events in a jumbled order gives the same state', replay(shuffled, APP.reducers, APP.init), first);
+    const store = createStore(log, APP);
+    eq('the store rebuilds the same state from the log', await store.state(), first);
+    log.close();
+    const again = await openLog(log.name);
+    opened.push(again);
+    eq('closing and reopening the log rebuilds the same state', await createStore(again, APP).state(), first);
+    const init = JSON.parse(JSON.stringify(APP.init));
+    replay(events, APP.reducers, APP.init);
+    eq('replay never changes the starting state it was given', APP.init, init);
+    eq('effective() hides the hidden and applies the correction', effective(events).length, 19);
+  }
+
+  // ---------------------------------------------------------------- checkpoints
+  group = 'Month checkpoints';
+  {
+    const log = await newLog();
+    at(2026, 9, 2); const s1 = await log.append('shift', { hours: 30 });
+    at(2026, 9, 14); await log.append('shift', { hours: 34 });
+    at(2026, 9, 28); await log.append('note', { text: 'end of September' });
+    at(2026, 10, 1, 8); const store = createStore(log, APP);
+    const cp = await store.checkpoint('2026-09');
+    eq('September’s checkpoint counts September’s 3 events', cp.data.count, 3);
+    eq('…and its summary is the state then', cp.data.summary, { hours: 64, shifts: 2 });
+    yes('…and carries a SHA-256 hash', /^[0-9a-f]{64}$/.test(cp.data.hash), cp.data.hash);
+    eq('a rebuild of September matches its checkpoint', (await store.verify('2026-09')).ok, true);
+    at(2026, 10, 5); await log.append('shift', { hours: 33 });
+    at(2026, 10, 9); await log.hide(s1.id);
+    eq('October’s new shift and a hide don’t disturb September’s checkpoint', (await store.verify('2026-09')).ok, true);
+    at(2026, 11, 1); await store.checkpoint('2026-10');
+    eq('October’s checkpoint matches its rebuild too', (await store.verify('2026-10')).ok, true);
+    eq('October’s summary has the hidden shift taken out', (await log.all()).filter(e => e.kind === 'checkpoint').pop().data.summary, { hours: 67, shifts: 2 });
+    const tampered = (await log.all()).map(e => (e.id === s1.id ? { ...e, data: { hours: 31 } } : e));
+    eq('if a September event were ever changed, the rebuild would catch it', (await verifyCheckpoint(tampered, cp.data, APP)).ok, false);
+    eq('a month with no checkpoint says so', await store.verify('2026-08'), null);
+  }
+
+  // ---------------------------------------------------------------- backup
+  group = 'Backups';
+  {
+    const a = await newLog();
+    at(2026, 10, 12);
+    for (let i = 0; i < 6; i++) await a.append('shift', { hours: 4 + i }, 'money');
+    const n0 = await a.append('note', { text: 'hello' }, 'study');
+    await a.hide(n0.id);
+    const file = JSON.parse(JSON.stringify(await exportLog(a)));   // as if saved and read back
+    eq('the backup holds every event', file.count, await a.count());
+    yes('the file name matches *backup*.json, which git ignores', /backup.*\.json$/.test(backupName(clock)), backupName(clock));
+    const b = await newLog();
+    const r1 = await importLog(b, file);
+    eq('importing into an empty log adds every event', r1.added, file.count);
+    eq('export, then import, gives the same log', await b.all(), await a.all());
+    const r2 = await importLog(b, file);
+    eq('importing the same backup twice adds nothing the second time', [r2.added, r2.same, r2.conflicts], [0, file.count, 0]);
+    eq('…and the log is exactly as it was', await b.all(), await a.all());
+    eq('importing a log’s own backup into itself adds nothing', (await importLog(a, file)).added, 0);
+    const extra = await b.append('shift', { hours: 1 }, 'money');
+    eq('importing an older backup keeps newer work', !!(await b.get(extra.id)) && (await importLog(b, file)).added, 0);
+    eq('merging the other way brings the new event across', (await importLog(a, await exportLog(b))).added, 1);
+    eq('…and then both logs match', await a.all(), await b.all());
+    const bad = JSON.parse(JSON.stringify(file)); bad.events[0].data = { hours: 999 };
+    const r3 = await importLog(b, bad);
+    eq('a backup event that clashes with one here is a conflict; the one here is kept', [r3.conflicts, (await b.get(bad.events[0].id)).data.hours], [1, 4]);
+    const nb = await b.count();
+    eq('not JSON is refused', !!check('{oops').error, true);
+    eq('another app’s file is refused', !!check({ app: 'other', kind: 'log', v: 1, count: 0, events: [] }).error, true);
+    eq('a cut-off file is refused', !!check({ ...file, count: file.count + 1 }).error, true);
+    eq('a backup holding an ephemeral kind is refused', !!check({ ...file, count: 1, events: [{ ...file.events[0], kind: 'breathe' }] }).error, true);
+    eq('an event with a UTC time instead of local is refused', !!check({ ...file, count: 1, events: [{ ...file.events[0], at: '2026-10-12T17:00:00.000Z' }] }).error, true);
+    const half = { ...file, count: 2, events: [{ ...file.events[0], id: 'zzzzzzzzzzzz0000' }, { ...file.events[1], at: 'yesterday' }] };
+    eq('a file with one bad event writes nothing at all', [!!(await importLog(b, half)).error, await b.count()], [true, nb]);
+    yes('asking the browser to keep storage answers yes or no', typeof (await persist()) === 'boolean');
+  }
+
+  // ---------------------------------------------------------------- dates
+  const S = { payday: '2026-10-12' };   // the sample anchor; the real one comes from settings
+  group = 'Dates: the real calendar is the default';
+  {
+    const d = D.describe('2026-10-16');
+    eq('with no settings, a date is just its real date', [d.year, d.month, d.day, d.weekdayName, d.seb], [2026, 10, 16, 'Fri', null]);
+    eq('with settings, the real date still comes first', [D.describe('2026-10-16', S).month, D.describe('2026-10-16', S).day], [10, 16]);
+    eq('weeks run Monday to Sunday', [D.weekOf('2026-10-16').start, D.weekOf('2026-10-16').end], ['2026-10-12', '2026-10-18']);
+    eq('October 2026 touches 5 weeks', D.weeksOfMonth(2026, 10).map(w => w.start), ['2026-09-28', '2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26']);
+    eq('today() reads the local date', D.today(new Date(2026, 9, 16, 23, 59)), '2026-10-16');
+    eq('a bad settings payday (not a Monday) is caught', !!D.checkSettings({ payday: '2026-10-13' }), true);
+  }
+  group = 'Dates: the Seb calendar';
+  {
+    const s = D.seb('2026-10-12', S);
+    eq('2026-10-12 = month 11, day 1', [s.year, s.month, s.day], [2026, 11, 1]);
+    eq('2027 starts on Mon Jan 4', D.sebYearStart(2027, S), '2027-01-04');
+    eq('Jan 4 2027 is month 1, day 1 of 2027', [D.seb('2027-01-04', S).year, D.seb('2027-01-04', S).month, D.seb('2027-01-04', S).day], [2027, 1, 1]);
+    eq('Jan 3 2027 is the last day of 2026 (month 13, day 28)', [D.seb('2027-01-03', S).year, D.seb('2027-01-03', S).month, D.seb('2027-01-03', S).day], [2026, 13, 28]);
+    eq('March 2027 has 3 paydays', D.paydaysInMonth(2027, 3, S), ['2027-03-01', '2027-03-15', '2027-03-29']);
+    eq('August 2027 has 3 paydays', D.paydaysInMonth(2027, 8, S), ['2027-08-02', '2027-08-16', '2027-08-30']);
+    eq('every other month of 2027 has 2', [1, 2, 4, 5, 6, 7, 9, 10, 11, 12].map(m => D.paydaysInMonth(2027, m, S).length), Array(10).fill(2));
+    eq('Dam Day falls on Feb 28 2027', D.damDay(2027, 2), '2027-02-28');
+    eq('Dam Day falls on Feb 29 2028', D.damDay(2028, 2), '2028-02-29');
+    eq('…and Feb 28 2028 isn’t Dam Day', [D.isDamDay('2028-02-28'), D.isDamDay('2028-02-29')], [false, true]);
+    let ok = true, bad = null;
+    for (let y = 2026; y <= 2045 && ok; y++) {
+      const st = D.seb(D.sebYearStart(y, S), S);
+      for (let m = 1; m <= Math.ceil(st.yearLength / 28); m++) {
+        const ms = D.addDays(st.yearStart, (m - 1) * 28), len = Math.min(28, st.yearLength - (m - 1) * 28);
+        const pays = Array.from({ length: len }, (_, i) => D.addDays(ms, i)).filter(x => D.isPayday(x, S));
+        if (!D.isPayday(ms, S) || D.weekday(ms) !== 0 || pays.length !== Math.ceil(len / 14)) { ok = false; bad = [y, m, ms]; break; }
+      }
+    }
+    yes('2026 to 2045: every Seb month starts on a payday Monday and holds 2 paydays', ok, bad);
+    eq('a tie (2035: Dec 25 and Jan 8 are both 7 days out) goes to the earlier Monday', D.sebYearStart(2035, S), '2034-12-25');
+    const long = D.seb('2036-01-06', S);
+    eq('2035 runs 378 days, so its last 14 days are a short month 14', [long.year, long.yearLength, long.month, long.day, long.monthLength], [2035, 378, 14, 14, 14]);
+  }
+  group = 'Dates: daylight saving doesn’t shift anything';
+  {
+    let ok = true, bad = null, prev = '2026-09-30';
+    for (let i = 0; i < 220; i++) {
+      const d = D.addDays(prev, 1), a = D.seb(prev, S), b = D.seb(d, S);
+      const stepOk = D.daysBetween(prev, d) === 1 && D.weekday(d) === (D.weekday(prev) + 1) % 7 &&
+        (b.dayOfYear === a.dayOfYear + 1 || b.dayOfYear === 1) && (b.day === a.day + 1 || b.day === 1);
+      if (!stepOk) { ok = false; bad = [prev, d]; break; }
+      prev = d;
+    }
+    yes('Oct 2026 to May 2027, every day is one day after the last, weekdays and Seb days included', ok, bad);
+    eq('Nov 1 2026 (clocks go back) is a Sunday, Seb month 11 day 21', [D.weekday('2026-11-01'), D.seb('2026-11-01', S).month, D.seb('2026-11-01', S).day], [6, 11, 21]);
+    eq('Mar 14 2027 (clocks go forward) is a Sunday, Seb month 3 day 14', [D.weekday('2027-03-14'), D.seb('2027-03-14', S).month, D.seb('2027-03-14', S).day], [6, 3, 14]);
+    eq('the payday after each change is still a Monday on schedule', [D.nextPayday('2026-11-01', S), D.nextPayday('2027-03-14', S)], ['2026-11-09', '2027-03-15']);
+    eq('today() just after midnight and just before midnight, on both change days', [
+      D.today(new Date(2026, 10, 1, 0, 30)), D.today(new Date(2026, 10, 1, 23, 59)),
+      D.today(new Date(2027, 2, 14, 0, 30)), D.today(new Date(2027, 2, 14, 23, 59))],
+      ['2026-11-01', '2026-11-01', '2027-03-14', '2027-03-14']);
+    eq('a log time on each change day keeps its local date and hour', [stamp(new Date(2026, 10, 1, 1, 30)).slice(0, 16), stamp(new Date(2027, 2, 14, 3, 30)).slice(0, 16)],
+      ['2026-11-01T01:30', '2027-03-14T03:30']);
+  }
+}
+
+const progress = setInterval(() => { document.getElementById('sum').textContent = 'Running… ' + group + ' (' + results.length + ' so far)'; }, 200);
+try { await run(); }
+catch (e) { results.push({ group: 'Crashed', name: String(e && e.stack || e), ok: false }); }
+finally {
+  clearInterval(progress);
+  // Close every connection first: a database can't be removed while any connection to it is open.
+  for (const l of opened) l.close();
+  for (const name of new Set(opened.map(l => l.name))) await dropLog(name).catch(() => {});
+}
+
+// --- Show results
+const bad = results.filter(x => !x.ok);
+document.getElementById('sum').className = bad.length ? 'bad' : 'ok';
+document.getElementById('sum').textContent = bad.length ? bad.length + ' of ' + results.length + ' failed' : 'All ' + results.length + ' checks pass';
+const groups = [...new Set(results.map(x => x.group))];
+const esc = s => String(s).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+document.getElementById('out').innerHTML = groups.map(g => '<h2>' + esc(g) + '</h2><ul>' + results.filter(x => x.group === g).map(x => '<li class="' + (x.ok ? 'ok' : 'bad') + '">' + (x.ok ? '✓ ' : '✗ ') + esc(x.name) +
+  (x.ok ? '' : ' <code>got ' + esc(JSON.stringify(x.got)) + ', want ' + esc(JSON.stringify(x.want)) + '</code>') + '</li>').join('') + '</ul>').join('');
+document.body.dataset.done = '1';   // tells the headless runner the page has finished
+</script>
+</body>
+</html>
