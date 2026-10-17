@@ -27,7 +27,7 @@ const SAYINGS = [
 ];
 const AFTERNOON = ['make a beat', 'guitar', 'a long walk', 'nothing at all'];
 
-let log, store, state, sayingAt = 0, sheet = null;
+let log, store, state, sayingAt = 0, sheet = null, awake = false;
 
 /* ---------- Time of day ---------- */
 const hm = s => { const [h, m] = (s || '0:0').split(':').map(Number); return h * 60 + m; };
@@ -39,7 +39,8 @@ function moment(now = clock()) {
   const wake = hm(set.wake || '07:00'), wind = hm(set.windDown || '22:30'), evening = hm('18:00');
   // The day runs from 4 AM to 4 AM, so a late night still belongs to the day it started.
   const shifted = new Date(now.getTime() - 4 * 36e5), day = todayOf(shifted);
-  const phase = mins >= wind || mins < wake ? 'night' : mins >= evening ? 'evening' : 'day';
+  let phase = mins >= wind || mins < wake ? 'night' : mins >= evening ? 'evening' : 'day';
+  if (phase === 'night' && awake) phase = 'day';   // "not yet": the full Home until you leave the app
   return { now, mins, day, phase, hour: now.getHours() };
 }
 function dateLine(iso) {
@@ -153,7 +154,8 @@ function nightHTML(m) {
   const time = m.now.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
   const one = state.places.includes('sleep') ? 'Phone sleeps outside the bedroom tonight.' : 'Put the day down. It’ll keep.';
   return `<div class="night" style="display:flex;flex-direction:column;flex:1"><div class="when">${esc(time)} · wind-down</div>` +
-    `<h1>${one}</h1><p class="hint" style="color:#a7896b">Tomorrow starts slow.</p><div class="bye">Goodnight${hello()}.</div></div>`;
+    `<h1>${one}</h1><p class="hint" style="color:#a7896b">Tomorrow starts slow.</p><div class="bye">Goodnight${hello()}.` +
+    `<div style="margin-top:14px"><button class="link" style="color:#8a7058" data-act="awake">not yet · open 0_0</button></div></div></div>`;
 }
 
 /* ---------- Sheets ---------- */
@@ -264,6 +266,7 @@ document.addEventListener('click', async ev => {
   if (!a) return;
   const act = a.dataset.act, k = a.dataset.k, m = moment();
   if (act === 'saying') { sayingAt++; render(); }
+  else if (act === 'awake') { awake = true; render(); }
   else if (act === 'pillar') pillarSheet(k);
   else if (act === 'add') addSheet();
   else if (act === 'settings') settingsSheet();
@@ -346,6 +349,10 @@ async function start() {
   }
   render();
   setInterval(() => { if (!sheet) render(); }, 60000);
-  document.addEventListener('visibilitychange', async () => { if (!document.hidden) { state = await store.state(); if (!sheet) render(); } });
+  document.addEventListener('visibilitychange', async () => {
+    if (document.hidden) { awake = false; return; }   // next time you open it at night, it says goodnight again
+    state = await store.state();
+    if (!sheet) render();
+  });
 }
 start().catch(e => { $('app').innerHTML = `<p style="padding:30px">Something went wrong opening 0_0: ${esc(e.message)}</p>`; });
