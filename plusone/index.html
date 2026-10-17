@@ -791,5 +791,450 @@
 
   if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(() => {});
 </script>
+<style>
+  /* ===== Trackers (prototype): a library of things to add, count trackers and timer trackers with the sunrise.
+     All of this is new. The push-up counter above is untouched. ===== */
+  .tk-list { margin-top: 14px; display: flex; flex-direction: column; gap: 8px; }
+  .tk-row, .tk-pre { position: relative; display: flex; align-items: center; gap: 14px; width: 100%; padding: 13px 16px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); color: var(--text); text-align: left; overflow: hidden; isolation: isolate; }
+  .tk-row:active, .tk-pre:active { transform: scale(.985); }
+  .tk-row .bar { position: absolute; left: 0; top: 0; bottom: 0; width: calc(var(--q, 0) * 100%); background: rgba(29,158,117,.2); z-index: -1; transition: width .4s; }
+  .tk-row.done { border-color: var(--mint-hi); }
+  .tk-row.run { border-color: #E8A857; }
+  .tk-ic { flex: none; width: 36px; height: 36px; border-radius: 11px; display: grid; place-items: center; background: #262626; font-size: 14px; font-weight: 700; }
+  .tk-row b, .tk-pre b { display: block; font-size: 17px; font-weight: 600; }
+  .tk-row small, .tk-pre small { display: block; margin-top: 2px; font-size: 14px; color: var(--muted); }
+  .tk-row .go { margin-left: auto; color: #555; font-size: 22px; }
+  .tk-disc { display: block; width: 20px; height: 20px; border-radius: 50%; }
+  .tk-pres { display: flex; flex-direction: column; gap: 8px; margin-top: 18px; }
+  .tk-pre { padding: 14px 16px; }
+  .tk-pre em { margin-left: auto; font-style: normal; color: var(--mint-hi); font-size: 15px; }
+  .tk-pre.mine { border-style: dashed; background: none; }
+  .tk-pre.mine small { color: #6b6a64; }
+  .tk-page { z-index: 11; }
+  .tk-z { z-index: 13; }
+  .tk-back { background: none; border: none; color: var(--text); font-size: 15px; padding: 0; }
+  .tk-hist { margin: 14px 0 0; padding: 0; list-style: none; max-height: 44vh; overflow-y: auto; }
+  .tk-hist li { display: flex; justify-content: space-between; align-items: center; padding: 10px 0; border-bottom: 1px solid #1f1f1e; font-size: 15px; color: var(--muted); }
+  .tk-hist li b { color: var(--text); font-weight: 600; }
+  .tk-hist li em { font-style: normal; font-size: 13px; margin-left: 8px; }
+  .tk-hist li.dh { display: block; padding: 14px 0 4px; border: none; font-size: 12px; letter-spacing: 2px; text-transform: uppercase; }
+
+  /* The count screen is the same big filling button as the push-up counter. */
+  .tk-big { --p: 0; position: relative; flex: 1; min-height: 300px; margin-top: 20px; padding: 0; border: 1px solid var(--line); border-radius: 28px; background: var(--card); overflow: hidden; isolation: isolate; touch-action: manipulation; transition: --p .35s cubic-bezier(.2,.8,.2,1), border-color .3s, transform .08s; }
+  .tk-big:active { transform: scale(.985); }
+  .tk-big.complete { border-color: var(--mint-hi); }
+  .tk-big .fill { position: absolute; left: 0; right: 0; bottom: 0; height: calc(var(--p) * 100%); background: var(--mint); }
+  .tk-big .lbl { position: absolute; left: 50%; display: flex; flex-direction: column; align-items: center; line-height: 1; font-variant-numeric: tabular-nums; pointer-events: none; }
+  .tk-big .lbl small { margin-top: 6px; font-size: 14px; display: flex; align-items: center; gap: 4px; }
+  .tk-big .l { top: clamp(44px, calc((1 - var(--p)) * 50%), calc(100% - 44px)); transform: translate(-50%, -50%); color: var(--muted); }
+  .tk-big .l b { font-size: 36px; font-weight: 600; }
+  .tk-big .d { bottom: clamp(60px, calc(var(--p) * 50%), calc(100% - 60px)); transform: translate(-50%, 50%); }
+  .tk-big .d b { font-size: 84px; font-weight: 600; letter-spacing: -2px; }
+
+  /* The timer screen is the sky. Everything on it is drawn by the script from how far through the timer you are. */
+  .tk-page.sky { overflow: hidden; color: #fff; }
+  .sk-stars, .sk-halo { position: absolute; inset: 0; pointer-events: none; }
+  .sk-stars i { position: absolute; border-radius: 50%; background: #fff; }
+  .sk-cloud { position: absolute; border-radius: 50%; filter: blur(9px); pointer-events: none; }
+  .sk-sun { position: absolute; left: 50%; transform: translateX(-50%); width: clamp(110px, 17vh, 170px); aspect-ratio: 1; border: none; padding: 0; border-radius: 50%; display: grid; place-items: center; cursor: pointer; }
+  .sk-face { font-size: clamp(28px, 4.6vh, 42px); font-weight: 700; letter-spacing: 1px; line-height: 1; transform: translateY(-3px); pointer-events: none; }
+  .sk-hills { position: absolute; left: 0; right: 0; bottom: 0; width: 100%; height: 30%; pointer-events: none; }
+  .sk-top { position: absolute; left: 0; right: 0; top: 0; padding: calc(18px + env(safe-area-inset-top)) 20px 0; z-index: 5; }
+  .sk-back { background: none; border: none; color: #fff; font-size: 28px; font-weight: 700; letter-spacing: -.3px; padding: 0; }
+  .sk-count { position: absolute; left: 0; right: 0; top: 12vh; text-align: center; white-space: nowrap; z-index: 5; }
+  .sk-count .n { font-size: clamp(64px, 10vh, 92px); font-weight: 700; letter-spacing: -3px; font-variant-numeric: tabular-nums; line-height: 1; }
+  .sk-count .u { font-size: 24px; font-weight: 500; margin-left: 8px; opacity: .75; }
+  .sk-say { position: absolute; left: 0; right: 0; top: 12vh; text-align: center; font-size: clamp(44px, 6.4vh, 58px); font-weight: 700; letter-spacing: -2px; line-height: 1.03; z-index: 5; }
+  .sk-sub { position: absolute; left: 0; right: 0; top: calc(12vh + clamp(64px, 10vh, 92px) + 18px); text-align: center; font-size: 16px; opacity: .74; z-index: 5; }
+  .sk-sub.dn { top: calc(12vh + clamp(44px, 6.4vh, 58px) + 20px); opacity: .95; }
+  .sk-ctl { position: absolute; left: 0; right: 0; bottom: calc(46px + env(safe-area-inset-bottom)); display: flex; justify-content: center; z-index: 6; }
+  .sk-stop { padding: 13px 34px; border-radius: 999px; border: 1px solid rgba(255,255,255,.42); background: rgba(0,0,0,.2); color: #fff; font-size: 16px; }
+  .sk-hist { border: none; background: none; color: #fff; font-size: 15px; text-decoration: underline; opacity: .62; padding: 10px; }
+  .sky.lit .sk-back, .sky.lit .sk-count, .sky.lit .sk-say, .sky.lit .sk-sub { text-shadow: 0 1px 3px rgba(8,24,64,.28), 0 1px 16px rgba(8,24,64,.5); }
+</style>
+<script>
+  /* Trackers (prototype). Its own script on purpose: if anything in here breaks, the push-up counter above still runs.
+     Data lives under its own key, so your push-up days are never touched. */
+  (() => {
+  try {
+    const KEY = 'plus-one-trackers-v1';
+    const CUTOFF = 4;   // a day ends at 4 AM, same as the push-up counter
+    const SPEED = Math.max(1, +new URLSearchParams(location.search).get('speed') || 1);   // ?speed=60 plays a 5-minute sunrise in 5 seconds, for testing
+    const $ = id => document.getElementById(id);
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const buzz = p => { try { navigator.vibrate && navigator.vibrate(p); } catch {} };
+    const XICON = '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6l-12 12"/><path d="M6 6l12 12"/></svg>';
+
+    // The library. A preset is just data: count or timer, where it starts, what it adds each day, where it stops growing.
+    // Every timer gets the sunrise.
+    const PRESETS = [
+      { id: 'sun', name: 'Sun', input: 'timer', start: 300, step: 0, cap: 300, done: 'Sun’s up', blurb: 'A 5-minute sunrise' },
+      { id: 'pushups', name: 'Push-ups', input: 'count', start: 1, step: 1, cap: 0, blurb: '+1 a day. A plain counter; your streak stays on the main screen' },
+      { id: 'meditate', name: 'Meditate', input: 'timer', start: 60, step: 10, cap: 1200, blurb: 'Starts at 1 min, adds 10 s a day' },
+      { id: 'stretch', name: 'Stretch', input: 'timer', start: 60, step: 10, cap: 600, blurb: 'For the splits. Starts at 1 min, adds 10 s a day' },
+    ];
+
+    // ---- saved data: the trackers you added, what you did each day, each timer session, and a timer in progress
+    const load = () => { try { const s = JSON.parse(localStorage.getItem(KEY)); if (s && s.v === 1) return s; } catch {} return { v: 1, list: [], days: {}, sessions: {}, run: null }; };
+    let S = load();
+    const save = () => { try { localStorage.setItem(KEY, JSON.stringify(S)); } catch {} };
+
+    // ---- the small maths
+    const today = () => { const d = new Date(Date.now() - CUTOFF * 36e5); return Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()) / 864e5; };
+    const find = id => S.list.find(t => t.id === id);
+    const targetOn = (tk, d) => { let t = tk.start + tk.step * Math.max(0, d - tk.from); if (tk.cap) t = Math.min(t, Math.max(tk.cap, tk.start)); return t; };
+    const doneOn = (tk, d) => (S.days[tk.id] || {})[d] || 0;
+    const mmss = s => { s = Math.max(0, Math.ceil(s - 1e-9)); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
+    const amt = (tk, n) => tk.input === 'timer' ? mmss(n) : String(n);
+    const dayLabel = d => d === today() ? 'Today' : d === today() - 1 ? 'Yesterday' : new Date(d * 864e5).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+    const iso = d => new Date(d * 864e5).toISOString().slice(0, 10);
+    const clock = ms => new Date(ms).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    const hhmm = ms => new Date(ms).toTimeString().slice(0, 5);
+    const elapsed = r => (Date.now() - r.start) / 1000 * SPEED;
+
+    // ---- the page furniture: a Library button next to the gear, a list under the push-up button, and four overlays
+    const meta = document.querySelector('meta[name="theme-color"]'), THEME0 = meta ? meta.getAttribute('content') : '#0f0f10';
+    const setTheme = c => { if (meta) meta.setAttribute('content', c); };
+    const gear = $('gear'), main = document.querySelector('main');
+    const libBtn = document.createElement('button');
+    libBtn.className = 'icon'; libBtn.id = 'tkLib'; libBtn.setAttribute('aria-label', 'Library');
+    libBtn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg>';
+    gear.parentNode.insertBefore(libBtn, gear);
+    const list = document.createElement('div'); list.id = 'tkList'; list.className = 'tk-list'; list.hidden = true; main.append(list);
+    const mk = (id, cls) => { const e = document.createElement('div'); e.id = id; e.className = cls; e.hidden = true; document.body.append(e); return e; };
+    const libPage = mk('tkLibPage', 'page'), addSheet = mk('tkAdd', 'sheet tk-z'), tkPage = mk('tkPage', 'page tk-page'), histSheet = mk('tkHist', 'sheet tk-z');
+
+    const DISC_ASLEEP = 'radial-gradient(circle at 50% 35%,#4a5170,#2c3248)', DISC_UP = 'radial-gradient(circle at 50% 35%,#ffd37a,#ff9f45)';
+    const iconFor = (tk, done) => tk.input === 'timer' ? '<i class="tk-disc" style="background:' + (done ? DISC_UP : DISC_ASLEEP) + '"></i>' : (tk.step ? '+' + tk.step : '•');
+
+    // ---- the list under the push-up button: one line per tracker
+    let lastHome = '';
+    function renderHome() {
+      const d = today();
+      list.hidden = !S.list.length;
+      const html = S.list.map(tk => {
+        const tgt = targetOn(tk, d), n = doneOn(tk, d), done = n >= tgt, run = S.run && S.run.id === tk.id, left = Math.max(0, tgt - n);
+        const line = run ? 'Running · ' + mmss(Math.max(0, S.run.dur - elapsed(S.run))) + ' left'
+          : done ? 'Done · ' + amt(tk, n)
+          : tk.input === 'timer' ? (n ? mmss(left) + ' left' : mmss(tgt)) : left + ' left';
+        return '<button class="tk-row' + (done ? ' done' : '') + (run ? ' run' : '') + '" data-id="' + tk.id + '" style="--q:' + Math.min(1, n / tgt) + '"><span class="bar"></span><span class="tk-ic">' + iconFor(tk, done) + '</span><span><b>' + esc(tk.name) + '</b><small>' + line + '</small></span><span class="go">›</span></button>';
+      }).join('');
+      if (html !== lastHome) list.innerHTML = lastHome = html;
+    }
+    list.onclick = e => { const r = e.target.closest('.tk-row'); if (r) openTracker(r.dataset.id); };
+
+    // ---- the library, and the sheet where you choose where it starts
+    const libHtml = () => '<div class="inner"><div class="top"><span>Library</span><button class="icon" id="tkLibX" aria-label="Close">' + XICON + '</button></div>' +
+      '<h2 style="margin-top:18px">Add something to +1</h2>' +
+      '<p class="hint">Pick one, then choose where it starts and how much it adds each day. Miss a day and nothing bad happens.</p>' +
+      '<div class="tk-pres">' + PRESETS.map(p => '<button class="tk-pre" data-p="' + p.id + '"><span class="tk-ic">' + iconFor(p, false) + '</span><span><b>' + esc(p.name) + '</b><small>' + esc(p.blurb) + '</small></span><em>' + (S.list.some(t => t.preset === p.id) ? 'Added' : '+') + '</em></button>').join('') +
+      '<button class="tk-pre mine" data-p="custom"><span class="tk-ic">+</span><span><b>Make your own</b><small>A name, a count or a timer, where it starts, what it adds</small></span></button></div></div>';
+    libBtn.onclick = () => { libPage.innerHTML = libHtml(); libPage.hidden = false; };
+    libPage.onclick = e => {
+      if (e.target.closest('#tkLibX')) { libPage.hidden = true; return; }
+      const b = e.target.closest('.tk-pre'); if (!b) return;
+      const p = b.dataset.p, have = p !== 'custom' && S.list.find(t => t.preset === p);
+      if (have) { libPage.hidden = true; openTracker(have.id); } else openAdd(p);
+    };
+
+    let draft = null;
+    function openAdd(pid) {
+      const p = pid === 'custom' ? { id: 'custom', name: '', input: 'count', start: 1, step: 1, cap: 0 } : PRESETS.find(x => x.id === pid);
+      draft = { ...p };
+      renderAdd(); addSheet.hidden = false;
+    }
+    function renderAdd() {
+      const t = draft, timer = t.input === 'timer', u = timer ? 'seconds' : 'reps', mine = t.id === 'custom';
+      addSheet.innerHTML = '<div class="panel"><h2>' + (mine ? 'Make your own' : esc(t.name)) + '</h2>' +
+        (mine ? '<input class="num" id="aName" type="text" placeholder="Name" maxlength="20" value="' + esc(t.name) + '" style="margin-top:14px;font-size:20px;text-align:left;padding:0 14px"><div class="seg"><button data-in="count" class="' + (timer ? '' : 'on') + '">Count</button><button data-in="timer" class="' + (timer ? 'on' : '') + '">Timer</button></div>' : '') +
+        '<p class="lab">Day 1 is (' + u + ')</p><input class="num" id="aStart" type="number" inputmode="numeric" min="1" value="' + t.start + '">' +
+        '<p class="lab">Add each day (' + u + ')</p><input class="num" id="aStep" type="number" inputmode="numeric" min="0" value="' + t.step + '">' +
+        '<p class="lab">Stop growing at (' + u + ', 0 = never)</p><input class="num" id="aCap" type="number" inputmode="numeric" min="0" value="' + t.cap + '">' +
+        '<p class="hint" id="aHint"></p><p class="err" id="aErr" hidden></p>' +
+        '<div class="acts"><button class="ghost" id="aCancel">Cancel</button><button class="cta" id="aSave">Add</button></div></div>';
+      addHint();
+    }
+    function addHint() {
+      const t = draft, g = n => amt(t, Math.min(t.cap ? Math.max(t.cap, t.start) : Infinity, t.start + t.step * n));
+      $('aHint').textContent = 'Day 1: ' + g(0) + ' · day 10: ' + g(9) + ' · day 30: ' + g(29) + (t.input === 'timer' ? ' (minutes:seconds)' : '');
+    }
+    addSheet.oninput = e => {
+      const t = e.target, v = Math.max(0, Math.floor(+t.value || 0));
+      if (t.id === 'aName') draft.name = t.value;
+      if (t.id === 'aStart') draft.start = Math.max(1, v);
+      if (t.id === 'aStep') draft.step = v;
+      if (t.id === 'aCap') draft.cap = v;
+      addHint();
+    };
+    addSheet.onclick = e => {
+      if (e.target === addSheet) { addSheet.hidden = true; return; }
+      const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.in) { draft.input = b.dataset.in; draft.start = b.dataset.in === 'timer' ? 60 : 1; draft.step = b.dataset.in === 'timer' ? 10 : 1; draft.cap = 0; renderAdd(); }
+      else if (b.id === 'aCancel') addSheet.hidden = true;
+      else if (b.id === 'aSave') commitAdd();
+    };
+    function commitAdd() {
+      const t = draft, name = (t.name || '').trim();
+      if (!name) { $('aErr').textContent = 'Give it a name.'; $('aErr').hidden = false; return; }
+      const id = t.id === 'custom' ? 'c' + Date.now().toString(36) : t.id;
+      S.list.push({ id, preset: t.id, name, input: t.input, start: t.start, step: t.step, cap: t.cap, done: t.done || 'Done', from: today() });
+      save();
+      addSheet.hidden = true; libPage.hidden = true;
+      renderHome(); openTracker(id);
+    }
+
+    // ---- the sky: five looks (asleep, first light, over the hills, morning, up) blended by how far through the timer you are
+    const SKYSTOPS = [0, 34, 60, 74, 82, 100];
+    const K = [
+      { p: 0,   sky: ['#02030a', '#050818', '#0a1230', '#0e1838', '#0f1b40', '#0f1b40'], sun: ['#4a5170', '#2c3248', '#1e2234'], glow: [130, 150, 220, 0, 0, 0],      halo: [130, 150, 220, .10], y: .792, stars: 1,   face: '#9aa1bd', hills: ['#070a18', '#04050c'], cloud: [255, 150, 140, 0] },
+      { p: .13, sky: ['#04061a', '#0b1240', '#2a2763', '#7a3f7d', '#d1604f', '#ef8f54'], sun: ['#f59a4a', '#c9532f', '#8f3322'], glow: [240, 120, 60, .42, 70, 24],  halo: [240, 120, 60, .34],  y: .766, stars: .5,  face: '#5b2a1c', hills: ['#10112a', '#0a0b1c'], cloud: [255, 150, 140, 0] },
+      { p: .43, sky: ['#14246b', '#2a3a92', '#7b4a98', '#d46a7d', '#ff9a6a', '#ffc27a'], sun: ['#ffd37a', '#ff9f45', '#ee7a2c'], glow: [255, 160, 80, .5, 80, 28],  halo: [255, 170, 90, .5],   y: .628, stars: .08, face: '#6b2f12', hills: ['#2b1a4a', '#1b1033'], cloud: [255, 150, 140, .32] },
+      { p: .77, sky: ['#2d62b8', '#4f86cf', '#8fa9d8', '#f0b99a', '#ffd7a0', '#ffe6b0'], sun: ['#fff3b0', '#ffd860', '#ffbf3f'], glow: [255, 220, 120, .55, 80, 28], halo: [255, 225, 150, .55], y: .482, stars: 0,   face: '#6a3a0b', hills: ['#3a3350', '#2a2540'], cloud: [255, 255, 255, .5] },
+      { p: 1,   sky: ['#3f82dc', '#6aa5ec', '#a8cdf3', '#f7dfc0', '#fff0cf', '#fff3d6'], sun: ['#fffbe8', '#ffec9a', '#ffd75a'], glow: [255, 240, 170, .6, 90, 30], halo: [255, 245, 200, .65], y: .361, stars: 0,   face: '#6a4a10', hills: ['#40405c', '#2d2d48'], cloud: [255, 255, 255, .7] },
+    ];
+    const hex = c => [1, 3, 5].map(i => parseInt(c.slice(i, i + 2), 16));
+    const mixN = (a, b, t) => a + (b - a) * t;
+    const mixC = (a, b, t) => { const x = hex(a), y = hex(b); return '#' + x.map((v, i) => Math.round(mixN(v, y[i], t)).toString(16).padStart(2, '0')).join(''); };
+    const rgb3 = a => [a[0], a[1], a[2]].map(Math.round).join(',');
+    function frameAt(p) {
+      p = Math.min(1, Math.max(0, p));
+      let i = 0; while (i < K.length - 2 && p > K[i + 1].p) i++;
+      const a = K[i], b = K[i + 1], t = (p - a.p) / (b.p - a.p), nums = (x, y) => x.map((v, j) => mixN(v, y[j], t)), cols = (x, y) => x.map((v, j) => mixC(v, y[j], t));
+      return { sky: cols(a.sky, b.sky), sun: cols(a.sun, b.sun), glow: nums(a.glow, b.glow), halo: nums(a.halo, b.halo), y: mixN(a.y, b.y, t), stars: mixN(a.stars, b.stars, t), face: mixC(a.face, b.face, t), hills: cols(a.hills, b.hills), cloud: nums(a.cloud, b.cloud) };
+    }
+    function paintSky(p) {
+      const sun = $('skSun'); if (!sun) return;
+      const f = frameAt(p), H = tkPage.clientHeight || innerHeight, size = sun.offsetWidth || 150, ring = Math.max(0, 1 - p / .1);
+      tkPage.style.background = 'linear-gradient(180deg,' + f.sky.map((c, i) => c + ' ' + SKYSTOPS[i] + '%').join(',') + ')';
+      $('skHalo').style.background = 'radial-gradient(circle at 50% ' + (f.y * 100).toFixed(1) + '%,rgba(' + rgb3(f.halo) + ',' + f.halo[3].toFixed(3) + ') 0,rgba(' + rgb3(f.halo) + ',' + (f.halo[3] * .45).toFixed(3) + ') 170px,rgba(' + rgb3(f.halo) + ',' + (f.halo[3] * .12).toFixed(3) + ') 320px,rgba(' + rgb3(f.halo) + ',0) 480px)';
+      sun.style.top = (f.y * H - size / 2).toFixed(1) + 'px';
+      sun.style.background = 'radial-gradient(circle at 50% 35%,' + f.sun[0] + ' 0%,' + f.sun[1] + ' 65%,' + f.sun[2] + ' 100%)';
+      sun.style.boxShadow = '0 0 ' + f.glow[4].toFixed(0) + 'px ' + f.glow[5].toFixed(0) + 'px rgba(' + rgb3(f.glow) + ',' + f.glow[3].toFixed(3) + '),0 0 0 12px rgba(255,255,255,' + (.035 * ring).toFixed(3) + '),0 0 0 26px rgba(255,255,255,' + (.02 * ring).toFixed(3) + ')';
+      const face = $('skFace'); face.textContent = p < .3 ? '-_-' : p < .6 ? '._.' : '0_0'; face.style.color = f.face;   // eyes open as it clears the hills
+      $('skStars').style.opacity = f.stars.toFixed(3);
+      $('skHB').setAttribute('fill', f.hills[0]); $('skHF').setAttribute('fill', f.hills[1]);
+      const cloud = 'rgba(' + rgb3(f.cloud) + ',' + f.cloud[3].toFixed(3) + ')';
+      tkPage.querySelectorAll('.sk-cloud').forEach(c => { c.style.background = cloud; });
+      tkPage.classList.toggle('lit', p >= .3);
+      setTheme(f.sky[0]);   // the status bar takes the colour of the top of the sky, so the sky runs off the edge of the app
+    }
+
+    // ---- a tracker's own screen: the sky for a timer, the big filling button for a count
+    let cur = null;
+    const rng = a => () => { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+    function skyHtml(tk) {
+      const r = rng(7); let stars = '';
+      for (let i = 0; i < 46; i++) { const s = [1.2, 1.5, 1.5, 2, 2.4][Math.floor(r() * 5)]; stars += '<i style="left:' + (r() * 100).toFixed(1) + '%;top:' + (3 + r() * 60).toFixed(1) + '%;width:' + s + 'px;height:' + s + 'px;opacity:' + (.35 + r() * .65).toFixed(2) + '"></i>'; }
+      return '<div class="sk-stars" id="skStars">' + stars + '</div><div class="sk-halo" id="skHalo"></div>' +
+        '<div class="sk-cloud" style="left:-4%;top:34%;width:62%;height:34px"></div><div class="sk-cloud" style="left:48%;top:42%;width:54%;height:28px"></div><div class="sk-cloud" style="left:10%;top:58%;width:64%;height:34px"></div>' +
+        '<button class="sk-sun" id="skSun" aria-label="Start"><span class="sk-face" id="skFace">-_-</span></button>' +
+        '<svg class="sk-hills" viewBox="0 0 412 275" preserveAspectRatio="none"><path id="skHB" d="M0,128 C60,100 130,108 205,118 C280,128 350,98 412,112 L412,275 L0,275 Z"/><path id="skHF" d="M0,160 C70,140 140,150 210,162 C280,174 350,144 412,156 L412,275 L0,275 Z"/></svg>' +
+        '<div class="sk-top"><button class="sk-back" id="tkBack">‹ ' + esc(tk.name) + '</button></div>' +
+        '<div class="sk-count" id="skCount"><span class="n" id="skN">5:00</span><span class="u" id="skU">left</span></div>' +
+        '<div class="sk-say" id="skSay" hidden></div><div class="sk-sub" id="skSub">tap the sun</div>' +
+        '<div class="sk-ctl"><button class="sk-stop" id="skStop" hidden>Stop</button><button class="sk-hist" id="tkHistBtn">History</button></div>';
+    }
+    const countHtml = tk => '<div class="inner"><div class="top"><button class="tk-back" id="tkBack">‹ ' + esc(tk.name) + '</button><div class="right"><button class="pill" id="tkHistBtn">History</button></div></div>' +
+      '<h1 id="cTitle">Day 1</h1><p class="sub" id="cSub"></p>' +
+      '<button class="tk-big" id="cBtn"><div class="fill"></div><div class="lbl l" id="cLeft"><b></b><small>left</small></div><div class="lbl d" id="cDone"><b></b><small id="cDoneS">done</small></div></button>' +
+      '<div class="row"><button class="pill" id="cUndo" aria-label="Remove one">−1</button></div></div>';
+
+    function openTracker(id) {
+      cur = find(id); if (!cur) return;
+      const timer = cur.input === 'timer';
+      tkPage.className = 'page tk-page' + (timer ? ' sky' : '');
+      tkPage.style.background = '';
+      tkPage.innerHTML = timer ? skyHtml(cur) : countHtml(cur);
+      tkPage.hidden = false;
+      paint();
+      if (timer && S.run && S.run.id === cur.id) lockScreen();
+    }
+    function closeTracker() { tkPage.hidden = true; tkPage.style.background = ''; cur = null; setTheme(THEME0); renderHome(); }
+    const paint = () => { if (cur) cur.input === 'timer' ? paintTimer() : paintCount(); };
+
+    function paintTimer() {
+      const tk = cur, d = today(), tgt = targetOn(tk, d), n = doneOn(tk, d), r = S.run && S.run.id === tk.id ? S.run : null, done = !r && n >= tgt;
+      const p = r ? Math.min(1, elapsed(r) / r.dur) : done ? 1 : 0;
+      paintSky(p);
+      $('skStop').hidden = !r; $('tkHistBtn').hidden = !!r;
+      $('skCount').hidden = done; $('skSay').hidden = !done;
+      const sub = $('skSub'); sub.hidden = !!r; sub.className = 'sk-sub' + (done ? ' dn' : '');
+      $('skCount').style.opacity = r ? 1 : .55;
+      if (done) {
+        const last = (S.sessions[tk.id] || []).filter(s => s.day === d).sort((a, b) => b.at - a.at)[0];
+        $('skSay').textContent = tk.done || 'Done';
+        sub.textContent = mmss(n) + (last ? ' · ' + clock(last.at) : '');
+      } else if (r) {
+        $('skN').textContent = mmss(r.dur - elapsed(r)); $('skU').hidden = false;
+      } else {
+        $('skN').textContent = mmss(tgt - n); $('skU').hidden = !n;
+        sub.textContent = 'tap the sun';
+      }
+    }
+    function paintCount() {
+      const tk = cur, d = today(), tgt = targetOn(tk, d), n = Math.min(doneOn(tk, d), tgt), done = n >= tgt;
+      $('cTitle').textContent = 'Day ' + (d - tk.from + 1);
+      $('cSub').textContent = tk.step ? '+' + tk.step + ' a day' + (tk.cap ? ' · tops out at ' + tk.cap : '') : 'Same every day';
+      const b = $('cBtn'); b.style.setProperty('--p', Math.min(1, n / tgt)); b.classList.toggle('complete', done);
+      $('cLeft').hidden = done; $('cLeft').querySelector('b').textContent = tgt - n;
+      $('cDone').querySelector('b').textContent = n;
+      $('cDoneS').textContent = done ? 'done ✓' : 'done';
+    }
+    tkPage.onclick = e => {
+      if (!cur) return;
+      if (e.target.closest('#tkBack')) return closeTracker();
+      if (e.target.closest('#tkHistBtn')) return openHist();
+      if (e.target.closest('#skStop')) return finishRun(false);
+      if (e.target.closest('#skSun')) return pressSun();
+      const cb = e.target.closest('#cBtn'); if (cb) return tapCount(e, cb);
+      if (e.target.closest('#cUndo')) return undoCount();
+    };
+
+    // ---- counting
+    function tapCount(e, btn) {
+      const tk = cur, d = today(), tgt = targetOn(tk, d), n = doneOn(tk, d);
+      if (n >= tgt) { buzz(20); return; }
+      (S.days[tk.id] ||= {})[d] = n + 1; save(); paintCount(); renderHome();
+      const r = btn.getBoundingClientRect(), s = document.createElement('span');
+      s.className = 'plus'; s.textContent = '+1';
+      s.style.left = (e.clientX ? e.clientX - r.left : r.width / 2) + 'px'; s.style.top = (e.clientY ? e.clientY - r.top : r.height / 2) + 'px';
+      btn.append(s); setTimeout(() => s.remove(), 700);
+      buzz(n + 1 >= tgt ? [30, 60, 30] : 8);
+    }
+    function undoCount() {
+      const tk = cur, d = today(), n = doneOn(tk, d); if (!n) { buzz(20); return; }
+      if (n === 1) delete S.days[tk.id][d]; else S.days[tk.id][d] = n - 1;
+      save(); paintCount(); renderHome(); buzz(8);
+    }
+
+    // ---- the timer. It runs off a start time, so a sleeping phone or a reload can't lose it.
+    // A press runs what's left of today's target (so stopping at 2:10 of 5:00 leaves 2:50 for the next press).
+    let loopId = null, lastSec = -1, lock = null;
+    function pressSun() {
+      const tk = cur, d = today(), tgt = targetOn(tk, d), n = doneOn(tk, d);
+      if (S.run || n >= tgt) { buzz(20); return; }
+      askPerm();   // has to be asked straight from the tap
+      S.run = { id: tk.id, start: Date.now(), dur: Math.max(15, tgt - n), day: d, buzzed: false };
+      save(); buzz(15); lockScreen(); loop(); paintTimer(); renderHome();
+    }
+    function loop() { if (!loopId) loopId = setInterval(tick, 100); }
+    function unloop() { clearInterval(loopId); loopId = null; lastSec = -1; }
+    function tick() {
+      const r = S.run; if (!r) return unloop();
+      const el = elapsed(r), p = el / r.dur;
+      if (p >= 1) return finishRun(true);
+      if (!r.buzzed && p >= .3) { r.buzzed = true; save(); buzz(14); }   // the sun clears the hills
+      if (cur && cur.id === r.id && !tkPage.hidden) paintTimer();
+      const s = Math.ceil(r.dur - el); if (s !== lastSec) { lastSec = s; renderHome(); }
+    }
+    // Done runs the whole time; Stop saves what you did. Under 5 seconds counts as an accidental press and isn't kept.
+    function finishRun(done) {
+      const r = S.run; if (!r) return;
+      const tk = find(r.id), el = elapsed(r), late = done && el - r.dur > 15 * SPEED;   // "late" = it ended while the app wasn't looking
+      const sec = done ? Math.round(r.dur) : Math.min(Math.floor(el), Math.round(r.dur));
+      S.run = null; unloop(); unlockScreen();
+      if (tk && sec >= 5) {
+        const dd = (S.days[tk.id] ||= {}); dd[r.day] = (dd[r.day] || 0) + sec;
+        (S.sessions[tk.id] ||= []).push({ day: r.day, at: r.start, sec, done });
+      }
+      save();
+      if (done && tk && !late) {
+        buzz([30, 60, 30, 60, 90]);
+        notify(tk.name, (tk.done && tk.done !== 'Done' ? tk.done + ' · ' : '') + mmss(sec) + ' done');
+      }
+      if (cur && tk && cur.id === tk.id && !tkPage.hidden) paint(); else setTheme(THEME0);
+      renderHome();
+    }
+    // Keeping the screen on is what lets the alert land at 5:00 on the dot.
+    async function lockScreen() { try { if ('wakeLock' in navigator && !lock) { lock = await navigator.wakeLock.request('screen'); lock.addEventListener('release', () => { lock = null; }); } } catch {} }
+    const unlockScreen = () => { try { lock && lock.release(); } catch {} lock = null; };
+    const askPerm = () => { try { if ('Notification' in window && Notification.permission === 'default') Notification.requestPermission(); } catch {} };
+    async function notify(title, body) {
+      try {
+        if (!('Notification' in window) || Notification.permission !== 'granted') return;
+        const opts = { body, icon: 'icon-192.png', badge: 'icon-192.png', tag: 'plus-one-timer', renotify: true, vibrate: [30, 60, 30, 60, 90] };
+        const reg = navigator.serviceWorker && await navigator.serviceWorker.getRegistration();
+        if (reg && reg.showNotification) await reg.showNotification(title, opts); else new Notification(title, opts);
+      } catch {}
+    }
+
+    // ---- history, and the document: one CSV per tracker
+    function csv(tk) {
+      const rows = [];
+      if (tk.input === 'timer') {
+        rows.push('date,start,seconds,finished');
+        for (const s of (S.sessions[tk.id] || []).slice().sort((a, b) => b.at - a.at)) rows.push([iso(s.day), hhmm(s.at), s.sec, s.done ? 'yes' : 'no'].join(','));
+      } else {
+        rows.push('date,done,target,finished');
+        for (const d of Object.keys(S.days[tk.id] || {}).map(Number).sort((a, b) => b - a)) { const n = S.days[tk.id][d], t = targetOn(tk, d); rows.push([iso(d), n, t, n >= t ? 'yes' : 'no'].join(',')); }
+      }
+      return rows.join('\n') + '\n';
+    }
+    function download(name, text) {
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([text], { type: 'text/csv' })); a.download = name;
+      document.body.append(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }
+    function openHist() {
+      const tk = cur; if (!tk) return;
+      let items = '';
+      if (tk.input === 'timer') {
+        let last = null;
+        for (const s of (S.sessions[tk.id] || []).slice().sort((a, b) => b.at - a.at)) {
+          if (s.day !== last) { items += '<li class="dh">' + dayLabel(s.day) + '</li>'; last = s.day; }
+          items += '<li><span>' + clock(s.at) + '</span><span><b>' + mmss(s.sec) + '</b>' + (s.done ? '' : '<em>stopped</em>') + '</span></li>';
+        }
+      } else {
+        for (const d of Object.keys(S.days[tk.id] || {}).map(Number).sort((a, b) => b - a)) items += '<li><span>' + dayLabel(d) + '</span><span><b>' + S.days[tk.id][d] + '</b> of ' + targetOn(tk, d) + '</span></li>';
+      }
+      histSheet.innerHTML = '<div class="panel"><h2>' + esc(tk.name) + ' history</h2><ul class="tk-hist">' + (items || '<li>Nothing yet.</li>') + '</ul>' +
+        '<p class="hint">Kept on this device and included in Back up everything.</p>' +
+        '<div class="acts"><button class="ghost" id="tkHRemove">Remove</button><button class="cta" id="tkHExport">Export CSV</button></div><button class="ghost" id="tkHClose">Close</button></div>';
+      histSheet.hidden = false;
+    }
+    histSheet.onclick = e => {
+      if (e.target === histSheet || e.target.closest('#tkHClose')) { histSheet.hidden = true; return; }
+      if (e.target.closest('#tkHExport') && cur) download('0_0-' + cur.id + '-' + iso(today()) + '.csv', csv(cur));
+      if (e.target.closest('#tkHRemove') && cur && confirm('Remove ' + cur.name + ' and its history?')) removeTracker(cur.id);
+    };
+    function removeTracker(id) {
+      if (S.run && S.run.id === id) { S.run = null; unloop(); unlockScreen(); }
+      S.list = S.list.filter(t => t.id !== id); delete S.days[id]; delete S.sessions[id]; save();
+      histSheet.hidden = true; closeTracker();
+    }
+
+    // ---- wiring up
+    document.addEventListener('visibilitychange', () => { if (document.hidden) return; if (S.run) { lockScreen(); tick(); } renderHome(); });
+    window.addEventListener('resize', () => { if (cur && cur.input === 'timer' && !tkPage.hidden) paintTimer(); });
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Escape') return;
+      if (!histSheet.hidden) histSheet.hidden = true; else if (!addSheet.hidden) addSheet.hidden = true;
+      else if (!tkPage.hidden) closeTracker(); else if (!libPage.hidden) libPage.hidden = true;
+    });
+    renderHome();
+    if (S.run) {   // a timer was running when the page closed
+      const r = S.run;
+      if (!find(r.id)) { S.run = null; save(); }
+      else if (elapsed(r) >= r.dur) finishRun(true);
+      else { openTracker(r.id); loop(); lockScreen(); }
+    }
+    // Testing hooks (harmless): look at any moment of the sunrise without waiting for it.
+    window.__tk = {
+      state: () => S, frameAt, csv,
+      preview: p => {
+        const tk = S.list.find(t => t.input === 'timer'); if (!tk) return 'add a timer first';
+        if (!cur || cur.id !== tk.id || tkPage.hidden) openTracker(tk.id);
+        paintSky(p);
+        const mid = p > 0 && p < 1;
+        $('skN').textContent = mmss(300 * (1 - p)); $('skU').hidden = !mid; $('skCount').hidden = p >= 1; $('skCount').style.opacity = p > 0 ? 1 : .55;
+        $('skSay').hidden = p < 1; $('skSay').textContent = tk.done; $('skSub').hidden = mid; $('skSub').className = 'sk-sub' + (p >= 1 ? ' dn' : ''); $('skSub').textContent = p >= 1 ? '5:00 · 7:07 AM' : 'tap the sun';
+        $('skStop').hidden = !mid; $('tkHistBtn').hidden = mid;
+        return p;
+      },
+    };
+  } catch (err) { console.error('trackers:', err); }
+  })();
+</script>
 </body>
 </html>

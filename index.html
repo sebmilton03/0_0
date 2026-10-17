@@ -98,7 +98,7 @@
     if (all) { face.textContent = '-_-'; face.className = 'mark dim'; }
   }
   // One file with everything the apps have saved, so an update or a wiped browser can't lose it.
-  const KEYS = ['0_0-money-v1', '0_0-valley-v1', '0_0-study-v1', 'plus-one-v1'];
+  const KEYS = ['0_0-money-v1', '0_0-valley-v1', '0_0-study-v1', 'plus-one-v1', 'plus-one-trackers-v1'];
   document.getElementById('save').onclick = () => {
     const data = { app: '0_0', kind: 'everything', exported: new Date().toISOString().slice(0, 10), keys: {} };
     for (const k of KEYS) { const v = localStorage.getItem(k); if (v) data.keys[k] = v; }
