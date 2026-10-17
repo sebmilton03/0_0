@@ -289,4 +289,7 @@ async function start() {
     if (!sheetOpen()) render();
   });
 }
+// Offline: v2's own service worker (its scope is v2/, so it never touches the old apps' caching).
+if ('serviceWorker' in navigator && !AT && !ON) navigator.serviceWorker.register('sw.js').catch(() => {});
+
 start().catch(e => { $('app').innerHTML = `<main class="scr"><div class="say">Something went wrong opening 0_0.</div><p class="fine">${esc(e.message)}</p></main>`; });
