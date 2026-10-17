@@ -94,7 +94,15 @@ function nav(c) {
 function render() {
   if (!PLACES[current] || (state.tide && state.tide.on)) current = 'home';   // low tide: Home only, no bar
   const c = ctx(), place = PLACES[current];
-  const out = place.render(c);
+  // Safety net: if a screen ever breaks, show Home instead of a blank page. Nothing is lost; the log is untouched.
+  let out;
+  try { out = place.render(c); }
+  catch (e) {
+    console.error(e);
+    current = 'home';
+    try { out = home.render(ctx()); } catch (e2) { console.error(e2); out = { sky: 'night', html: `<div class="say">Something hiccuped.</div><p class="fine">Your data is safe. Close 0_0 and open it again.</p>` }; }
+    setTimeout(() => toast('Something hiccuped there. You’re home; nothing was lost.'), 50);
+  }
   paint(out.sky || c.m.sky);
   $('app').innerHTML = `<main class="scr${out.bare ? ' bare' : ''}">${out.html}</main>` + (out.bare || c.m.phase === 'night' ? '' : nav(c));
   remember();
@@ -237,7 +245,9 @@ document.addEventListener('click', async ev => {
   const act = a.dataset.act, place = PLACES[current] || home;
   // The place on screen first, then any place (a Home card can park a thought), then the shell.
   const fn = (place.actions && place.actions[act]) || [...Object.values(PLACES).map(p => p.actions), ...EXTRA_ACTIONS].map(a => a && a[act]).find(Boolean) || shell[act];
-  if (fn) await fn(ctx(), a);
+  if (!fn) return;
+  try { await fn(ctx(), a); }
+  catch (e) { console.error(e); toast('That didn’t work. Try again, or tell Claude.'); render(); }
 });
 
 // Hold the light to breathe (a quick tap just says how). Hold the face for low tide (a tap opens settings).

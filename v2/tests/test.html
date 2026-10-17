@@ -401,6 +401,10 @@ async function run() {
     const changed = replay([ev('money.import', data), ev('bill.set', { id: 'r', name: 'Rent', amounts: Array(12).fill(950) })], HOME.reducers, HOME.init);
     eq('changing a bill keeps its place; the old amount stays in the log', [changed.money.bills[0].name, changed.money.bills[0].amounts[0], changed.money.bills.length], ['Rent', 950, 4]);
     eq('the Money pillar reads Money’s breathing room', where({ ...HOME.init, places: ['money'] }, '2026-10-21', 9, { money: { ready: true, room: v.room, damDone: [] } }).pillars[0].word, 'steady');
+    const po = MN.payoffPlan(s, v);
+    eq('the loan’s payoff month is Valley’s payoff with this month’s extra going to it', po.month, VE.payoff(6400, 0.075, 210, Math.max(0, v.room) * v.rate, '2026-11').month);
+    eq('a day off pushes it later, a little: 10 hours ≈ ' + po.delayDays(10) + ' days', po.delayDays(10) > 0 && po.delayDays(10) < po.delayDays(20), true);
+    eq('with the Roth first, less goes to the loan, so it’s later', MN.payoffPlan({ ...s, money: { ...s.money, extra: { ...s.money.extra, first: 'roth' } } }, v).months >= po.months, true);
     const t = MN.trade(s, v, 10);
     eq('the trade: one more shift a week pays the loan off sooner', t.sooner > 0 && t.studyLost === 10, true);
   }

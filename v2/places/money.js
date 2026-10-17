@@ -3,7 +3,7 @@
 // one transfer at a time. Everyday numbers are rounded; exact cents only on Dam Day.
 
 import { esc, openSheet, closeSheet, toast, buzz, money, hrs } from '../ui.js';
-import { view, FEEL, trade, damPlan, afterDam, fromValley, lastBalance, POCKETS, EMPTY, engine } from '../engines/money.js';
+import { view, FEEL, trade, payoffPlan, damPlan, afterDam, fromValley, lastBalance, POCKETS, EMPTY, engine } from '../engines/money.js';
 import { weekHours, blocksOn } from '../engines/week.js';
 import { addDays, weekday } from '../engines/sebdate.js';
 import { monthFacts, named } from '../engines/tide.js';
@@ -18,6 +18,7 @@ const CAPTION = {
   personal: j => money(+j.amount || 0) + ' a month, minus borrowing', vault: j => 'tops up to ' + money(+j.cap || 0),
 };
 let screen = 'home';   // 'home' or 'dam'
+let lastCtx = null;    // for the hold-and-slide on fun money
 const M = s => s.money || EMPTY;
 
 /** Work hours a week from Day's blocks, if any are planned. */
@@ -30,40 +31,45 @@ export function render(ctx) {
   if (screen === 'dam' && !v.dam.done) return damScreen(ctx, v);
   if (v.dam.done && !(s.months || {})[v.dam.month] && screen !== 'later') return monthClose(ctx, v);
   if (screen !== 'later') screen = 'home';
-  const f = v.feeling, room = v.room;
-  const lines = {
-    steady: `Life this month costs about <b>${hrs(v.lifeHours)} hours</b> of work. You’re on track for <b>${hrs(v.planned)}</b>, so <b>${hrs(room)} hours are extra</b>.`,
-    tight: `Life this month costs about <b>${hrs(v.lifeHours)} hours</b> of work. You’re on track for <b>${hrs(v.planned)}</b>: covered, with <b>${hrs(room)}</b> to spare.`,
-    short: `Life this month costs about <b>${hrs(v.lifeHours)} hours</b> of work. You’re on track for <b>${hrs(v.planned)}</b>, so you’re <b>${hrs(-room)} hours short</b>. The vault can carry it, or a shift or two.`,
-    unknown: 'Log a paycheck and the hours show up here.',
-  };
-  const src = `<button class="fine" data-act="hoursWeek" style="display:block;text-align:left;margin-top:6px">About ${money(v.income.lo)}${v.income.hi - v.income.lo > 50 ? '–' + money(v.income.hi).slice(1) : ''} coming in: ${hrs(v.perWeek)} hr a week${workWeek(s, m.day) ? ' (from Day)' : ''} × ${v.rate ? money(v.rate, true) + '/hr take-home' : 'your pay'}. <span class="link">change</span></button>`;
-  const miss = ctx.memo.miss || 0, missRoom = room - miss * avgShift(s, m.day);
-  const whatIf = `<div class="next" style="margin-top:12px"><small>What if I miss shifts this month?</small>` +
-    `<div class="opts">${[0, 1, 2, 3, 4].map(n => `<button class="opt${miss === n ? ' on' : ''}" data-act="whatIf" data-v="${n}">${n ? n + (n === 1 ? ' shift' : ' shifts') : 'none'}</button>`).join('')}</div>` +
-    (miss ? `<p style="margin-top:8px">${missRoom >= 0 ? `Still covered, with ${hrs(missRoom)} hours extra.` : `${hrs(-missRoom)} hours short (about ${money(-missRoom * (v.rate || 0))}). The vault can carry it.`}</p>` : '') + `</div>`;
+  const room = v.room ?? 0, po = payoffPlan(s, v), loanName = cap(M(s).loan ? M(s).loan.name || 'the loan' : 'the loan');
+  const shift = Math.round(avgShift(s, m.day)), off = ctx.memo.off || 0;
+  lastCtx = ctx;
+  // The goal first: when the loan is gone. Without a loan, the plain number of extra hours.
+  const head = po && !po.never
+    ? `${esc(loanName)} is paid off around ${MONTH[+po.month.slice(5) - 1]} ${po.month.slice(0, 4)}.`
+    : room >= 0 ? `You’re working ${hrs(room)} hours more than life costs this month.` : `This month is ${hrs(-room)} hours short.`;
+  const sub = po && !po.never
+    ? (room > 0 ? `That’s with this month’s ${hrs(room)} extra hours going to it, on top of the ${money(+M(s).loan.payment || 0)} payment.` : `Only the ${money(+M(s).loan.payment || 0)} payment is going to it right now, so it’s slower.`)
+    : `Life this month costs about ${hrs(v.lifeHours)} hours of work; you’re on track for ${hrs(v.planned)}.`;
+  const offLine = !off ? '' : (po && !po.never ? `${esc(loanName)}: about ${po.delayDays(off)} day${po.delayDays(off) === 1 ? '' : 's'} later. ` : '') +
+    (room - off >= 0 ? `Still ${hrs(room - off)} hours extra this month.` : `This month would run ${hrs(off - room)} hours short; the vault covers it.`);
+  const timeOff = v.rate ? `<div class="next" style="margin-top:16px"><small>Take time off today?</small><div class="opts">` +
+    [[1, '1 hr'], [2, '2 hr'], [4, '4 hr'], [shift, 'a shift (' + shift + ' hr)']].map(([h, t]) => `<button class="opt${off === h ? ' on' : ''}" data-act="timeOff" data-v="${h}">${t}</button>`).join('') +
+    `</div>${offLine ? `<p style="margin-top:8px">${offLine}</p>` : ''}</div>` : '';
+  const dam = v.dam.open
+    ? `<button class="done peachy" data-act="damOpen" style="margin-top:12px">${v.dam.days === 0 ? 'Dam Day is today' : 'The dam can open'} · start</button>`
+    : `<button class="next" data-act="damInfo" style="display:block;width:100%;text-align:left;margin-top:12px"><small>Next money moment</small><b style="font-size:16px">${v.dam.done ? 'Dam Day is done' : 'Dam Day · ' + dayName(v.dam.date)}</b><p>${v.dam.done ? 'Next month starts clean.' : v.dam.days + ' days. It can open a week early.'}</p></button>`;
+  const p = v.personal;
+  const fun = `<div class="calm" data-fun="1" data-bal="${p ? Math.max(0, p.balance) : ''}" style="margin-top:12px;border:1.5px dashed rgba(255,213,154,.45);touch-action:pan-x;user-select:none;-webkit-user-select:none"><i>☺</i>` +
+    `<span style="flex:1"><span id="funAmt" style="font-size:17px;font-weight:800">${p ? money(Math.max(0, p.balance)) : 'Fun money'}</span><br><span class="fine" id="funSub">${p ? 'about ' + money(Math.max(0, p.perDay)) + ' a day · hold and slide to change' : 'tap to type what’s in it'}</span></span></div>`;
+  const more = ctx.memo.more;
   const wl = v.workLess, t = v.loan ? trade(s, v, avgShift(s, m.day)) : null;
-  const damLine = v.dam.done ? 'Dam Day is done. Next month starts clean.' : v.dam.open ? `Dam Day · ${v.dam.days === 0 ? 'today' : 'you can split early'}` : `Dam Day · ${dayName(v.dam.date)} · ${v.dam.days} days`;
+  const src = `<button class="fine" data-act="hoursWeek" style="display:block;text-align:left;margin-top:12px">About ${money(v.income.lo)}${v.income.hi - v.income.lo > 50 ? '–' + money(v.income.hi).slice(1) : ''} coming in: ${hrs(v.perWeek)} hr a week${workWeek(s, m.day) ? ' (from Day)' : ''} × ${v.rate ? money(v.rate, true) + '/hr take-home' : 'your pay'}. <span class="link">change</span></button>`;
+  const rest = !more ? '' :
+    src +
+    (wl ? `<div class="next" style="margin-top:12px"><small>The day you can work less</small><p style="font-size:14px;color:#fff;margin-top:6px">Life costs about <b>${hrs(wl.now)} hr a week</b> now${wl.afterLoan != null ? `, about <b>${hrs(wl.afterLoan)}</b> once ${esc(M(s).loan.name || 'the loan')} is gone` : ''}.</p></div>` : '') +
+    (t ? `<button class="calm" data-act="trade"><i>⇄</i><span>Pick up a shift? ${esc(loanName)} goes sooner, but study time shrinks. <span class="link">See the trade</span></span></button>` : '') +
+    `<button class="calm" data-act="vault"><i>⛨</i>${v.vault && v.vault.months != null ? `Vault: you’re safe for ${about(v.vault.months)}` : 'Vault: type what’s in it'}</button>` +
+    `<button class="calm" data-act="bills"><i>☰</i>Bills<span class="go">${money(M(s).bills.reduce((a, b) => a + b.amounts.reduce((x, y) => x + y, 0), 0) / 12)}/mo ›</span></button>` +
+    `<button class="calm" data-act="pockets"><i>◫</i>Your pockets<span class="go">›</span></button>`;
   return {
     sky: m.sky, html:
       `<div class="top"><span><b>Money</b></span><span>this month</span></div>` +
-      `<div class="say" style="font-size:30px;margin-top:24px">${FEEL[f]}</div>` +
-      `<p class="fine" style="font-size:14px;margin-top:8px;color:rgba(255,255,255,.75)">${lines[f]}</p>` + (f !== 'unknown' ? src + whatIf : '') +
-      (v.dam.open ? `<button class="done peachy" data-act="damOpen" style="margin-top:16px">The dam can open · start Dam Day</button>` : '') +
-      (wl ? `<div class="next" style="margin-top:18px"><small>The day you can work less</small>
-        <div style="display:flex;align-items:flex-end;gap:14px;margin-top:10px">
-          <div style="flex:1"><div style="height:64px;border-radius:10px;background:linear-gradient(180deg,#ffcf9e,#e8875a)"></div><div class="fine" style="margin-top:6px">now<br><b style="font-size:15px">${hrs(wl.now)} hr/wk</b></div></div>
-          ${wl.afterLoan != null ? `<div style="flex:1"><div style="height:${Math.max(16, 64 * wl.afterLoan / wl.now)}px;border-radius:10px;background:linear-gradient(180deg,#ffcf9e88,#e8875a88)"></div><div class="fine" style="margin-top:6px">after ${esc(M(s).loan.name || 'the loan')}<br><b style="font-size:15px">≈ ${hrs(wl.afterLoan)} hr/wk</b></div></div>` : ''}
-          <div style="flex:1"><div style="height:44px;border-radius:10px;border:1.5px dashed rgba(255,207,158,.6)"></div><div class="fine" style="margin-top:6px">cheaper living<br><b style="font-size:15px">someday</b></div></div>
-        </div>${wl.afterLoan != null ? `<p style="margin-top:10px">About ${hrs(wl.now - wl.afterLoan)} hours back every week, for school.</p>` : ''}</div>` : '') +
-      (t ? `<button class="calm" data-act="trade" style="margin-top:12px"><i>⇄</i><span>Pick up a shift? ${esc(cap(M(s).loan.name || 'the loan'))} goes sooner, but study time shrinks. <span class="link">See the trade</span></span></button>` : '') +
-      `<button class="calm" data-act="${v.dam.open ? 'damOpen' : 'damInfo'}"><i>◷</i>${esc(damLine)}</button>` +
-      `<button class="calm" data-act="vault"><i>⛨</i>${v.vault && v.vault.months != null ? `Vault: you’re safe for ${about(v.vault.months)}` : 'Vault: type what’s in it to see your months of life'}</button>` +
-      `<button class="calm" data-act="fun"><i>☺</i>${v.personal ? `Fun money: ${money(Math.max(0, v.personal.balance))}, about ${money(Math.max(0, v.personal.perDay))} a day` : 'Fun money: type what’s in Personal'}</button>` +
-      `<div class="lbl">The parts</div>` +
-      `<button class="calm" data-act="bills"><i>☰</i>Bills<span class="go">${money(M(s).bills.reduce((t, b) => t + b.amounts.reduce((a, x) => a + x, 0), 0) / 12)}/mo ›</span></button>` +
-      `<button class="calm" data-act="pockets"><i>◫</i>Your pockets<span class="go">›</span></button>` +
-      `<button class="calm" data-act="paycheck"><i>$</i>Paychecks${v.rate ? ` · ${money(v.rate)}/hr` : ''}<span class="go">log one ›</span></button>`,
+      `<div class="say" style="font-size:28px;margin-top:24px">${head}</div>` +
+      `<p class="fine" style="font-size:14px;margin-top:8px;color:rgba(255,255,255,.75)">${sub}</p>` +
+      timeOff + dam + fun +
+      `<button class="calm" data-act="paycheck"><i>$</i>Log a paycheck${v.rate ? `<span class="go">${money(v.rate, true)}/hr ›</span>` : ''}</button>` +
+      `<p class="fine center" style="margin-top:14px"><button class="link" data-act="more">${more ? 'less' : 'more · work less, vault, bills, pockets'}</button></p>` + rest,
   };
 }
 const monthsWords = n => (n >= 1.75 ? Math.round(n) + ' months' : n >= 0.75 ? 'a month' : 'a few weeks');
@@ -329,6 +335,8 @@ export const actions = {
     closeSheet(); await ctx.write('balance', { date: ctx.m.day, jar: 'personal', value: Math.max(0, Math.round((p.balance + +el.dataset.v) * 100) / 100) }, 'Fun money ' + money(Math.max(0, p.balance + +el.dataset.v)));
   },
   whatIf: (ctx, el) => { ctx.memo.miss = +el.dataset.v; ctx.render(); },   // a what-if: shown, never saved
+  timeOff: (ctx, el) => { const h = +el.dataset.v; ctx.memo.off = ctx.memo.off === h ? 0 : h; ctx.render(); },   // shown, never saved
+  more: ctx => { ctx.memo.more = !ctx.memo.more; ctx.render(); },
   hoursWeek: ctx => {
     const m = M(ctx.state), fromDay = workWeek(ctx.state, ctx.m.day);
     openSheet(`<div class="lbl">Hours a week</div><div class="say">${fromDay ? hrs(fromDay) + ' hours, from Day.' : 'Your usual week.'}</div>` +
@@ -361,3 +369,29 @@ export const actions = {
   saveFunBal: async ctx => { const v = num('fbal'); if (!(v >= 0)) return; closeSheet(); await ctx.write('balance', { date: ctx.m.day, jar: 'personal', value: v }, 'Kept'); },
   saveVault: async ctx => { const v = num('vbal'); if (!(v >= 0)) return; closeSheet(); await ctx.write('balance', { date: ctx.m.day, jar: 'vault', value: v }, 'Kept'); },
 };
+
+/* ---------- Fun money: tap to type it; hold, then slide up or down to change it ($1 per small step) ---------- */
+let slide = null;
+document.addEventListener('pointerdown', e => {
+  const el = e.target.closest('[data-fun]'); if (!el || !lastCtx) return;
+  const base = el.dataset.bal === '' ? null : +el.dataset.bal;
+  slide = { el, y0: e.clientY, base, value: base, active: false, id: e.pointerId,
+    timer: base == null ? null : setTimeout(() => { if (!slide) return; slide.active = true; el.style.borderColor = 'rgba(255,213,154,.9)'; buzz('tick');
+      try { el.setPointerCapture(slide.id); } catch {} document.getElementById('funSub').textContent = 'slide up or down · let go to keep'; }, 350) };
+});
+document.addEventListener('pointermove', e => {
+  if (!slide) return;
+  if (!slide.active) { if (Math.abs(e.clientY - slide.y0) > 10) { clearTimeout(slide.timer); slide = null; } return; }   // a scroll, not a hold
+  e.preventDefault();
+  const v = Math.max(0, Math.round(slide.base + (slide.y0 - e.clientY) / 6));
+  if (v !== slide.value) { slide.value = v; document.getElementById('funAmt').textContent = money(v); }
+});
+const endSlide = async cancelled => {
+  if (!slide) return;
+  const s = slide; slide = null; clearTimeout(s.timer);
+  if (!s.active) { if (!cancelled) funSheet(lastCtx); return; }   // a quick tap: type it
+  if (s.value !== s.base) await lastCtx.write('balance', { date: lastCtx.m.day, jar: 'personal', value: s.value }, 'Fun money ' + money(s.value), 'tick');
+  else lastCtx.render();
+};
+document.addEventListener('pointerup', () => endSlide(false));
+document.addEventListener('pointercancel', () => endSlide(true));

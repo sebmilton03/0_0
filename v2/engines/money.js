@@ -88,6 +88,23 @@ export function view(s, today, workWeek = null) {
   };
 }
 
+/**
+ * When the loan is paid off, if the extra hours this month keep going to it (Dam Day sends the leftover
+ * to the loan first, unless the Roth is first). And what taking hours off today does to that date.
+ * Returns null without a loan. { month: 'YYYY-MM', months, perMonth, extra, delayDays(h) }.
+ */
+export function payoffPlan(s, v) {
+  const m = s.money, VEe = engine();
+  if (!v.loan || !v.rate) return null;
+  let extra = Math.max(0, v.room || 0) * v.rate;                         // money beyond what life costs, a month
+  if (m.extra.first === 'roth') extra = Math.max(0, extra - (+m.extra.rothLimit || 0) / 12);
+  const pay = +m.loan.payment || 0, p = VEe.payoff(v.loan.owed, +m.loan.apr || 0, pay, extra, v.dam.splitMonth);
+  const perMonth = pay + extra;
+  return { month: p.month, months: p.months, never: p.never, perMonth, extra,
+    // An hour off is an hour's take-home that doesn't reach the loan: a one-time push, in days.
+    delayDays: h => (perMonth > 0 ? Math.round(h * v.rate / perMonth * 30.4) : null) };
+}
+
 /** Breathing room in words, for the pillar and the top of Money. */
 export const FEEL = {
   steady: 'Money feels steady.',
