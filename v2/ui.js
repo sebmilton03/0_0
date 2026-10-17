@@ -23,7 +23,7 @@ export function openSheet(html, { closed } = {}) {
   const layer = $('layer'), replacing = !!sheetEl;
   // A sheet opened from a sheet takes its place and reuses its history step, so Back still closes just one.
   if (replacing) closeSheet(true, true);
-  layer.innerHTML = `<div class="scrim" data-act="close"></div><div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div>${html}</div>`;
+  layer.innerHTML = `<div class="scrim" data-act="close"></div><div class="sheet" role="dialog" aria-modal="true"><div class="grab"></div><button class="sheetx" data-act="close">done</button>${html}</div>`;
   const s = layer.querySelector('.sheet'), scrim = layer.querySelector('.scrim');
   sheetEl = s; onClose = closed || null;
   setTimeout(() => { scrim.classList.add('on'); s.classList.add('on'); }, 20);

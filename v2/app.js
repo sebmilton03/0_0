@@ -85,7 +85,9 @@ function paint(skyName) {
   document.querySelector('meta[name=theme-color]').content = (SKIES[skyName] || SKIES.night).top;
 }
 function nav(c) {
-  const tabs = TABS.filter(t => t === 'home' || (c.state.tabs || []).includes(t));
+  // Home is always there, and so is the place you're on, even if it isn't in the bar yet.
+  const tabs = TABS.filter(t => t === 'home' || t === current || (c.state.tabs || []).includes(t));
+  if (current === 'long' && !tabs.includes('grow')) tabs.push('grow');
   if (tabs.length < 2) return '';
   return `<nav class="links">${tabs.map(t => `<button class="${t === current ? 'on' : ''}" data-act="tab" data-k="${t}">${t}</button>`).join('')}</nav>`;
 }

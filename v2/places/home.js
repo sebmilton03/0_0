@@ -132,7 +132,7 @@ function parkedCard(due) {
 
 function chillin(ctx, w) {
   const { state: s, m } = ctx;
-  const all = w.allGood ? `<p class="center" style="margin-top:12px;font-size:11.5px;font-weight:800;letter-spacing:1.4px;color:rgba(255,236,200,.8)">ALL ${['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX'][w.pillars.length]} · MEGA CHILLIN BRUH</p>` : '';
+  const all = w.allGood && w.pillars.length >= 3 ?`<p class="center" style="margin-top:12px;font-size:11.5px;font-weight:800;letter-spacing:1.4px;color:rgba(255,236,200,.8)">ALL ${['', 'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE', 'SIX'][w.pillars.length]} · MEGA CHILLIN BRUH</p>` : '';
   return {
     sky: 'golden', html:
       `<div class="top">${dateTop(m.day)}<span class="r">${sebChip(s, m.day)}${faceBtn('-_-')}</span></div>` +

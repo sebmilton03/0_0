@@ -3,7 +3,7 @@
 // one transfer at a time. Everyday numbers are rounded; exact cents only on Dam Day.
 
 import { esc, openSheet, closeSheet, toast, buzz, money, hrs } from '../ui.js';
-import { view, FEEL, trade, damPlan, afterDam, fromValley, amountsFor, lastBalance, POCKETS, EMPTY, engine } from '../engines/money.js';
+import { view, FEEL, trade, damPlan, afterDam, fromValley, lastBalance, POCKETS, EMPTY, engine } from '../engines/money.js';
 import { weekHours, blocksOn } from '../engines/week.js';
 import { addDays, weekday } from '../engines/sebdate.js';
 import { monthFacts, named } from '../engines/tide.js';
@@ -32,18 +32,23 @@ export function render(ctx) {
   if (screen !== 'later') screen = 'home';
   const f = v.feeling, room = v.room;
   const lines = {
-    steady: `About <b>${money(v.income.lo)}${v.income.hi - v.income.lo > 50 ? '–' + money(v.income.hi).slice(1) : ''}</b> coming in${v.range ? ' (tips move it)' : ''}. Bills are covered, with <b>${hrs(room)} hours of breathing room</b>.`,
-    tight: `About <b>${money(v.income.lo)}</b> coming in. Bills are covered, with <b>${hrs(room)} hours</b> to spare. Tight, but fine.`,
-    short: `About <b>${money(v.income.lo)}</b> coming in, which is <b>${hrs(-room)} hours short</b> of what life costs this month. The vault can carry it, or a shift or two.`,
+    steady: `Life this month costs about <b>${hrs(v.lifeHours)} hours</b> of work. You’re on track for <b>${hrs(v.planned)}</b>, so <b>${hrs(room)} hours are extra</b>.`,
+    tight: `Life this month costs about <b>${hrs(v.lifeHours)} hours</b> of work. You’re on track for <b>${hrs(v.planned)}</b>: covered, with <b>${hrs(room)}</b> to spare.`,
+    short: `Life this month costs about <b>${hrs(v.lifeHours)} hours</b> of work. You’re on track for <b>${hrs(v.planned)}</b>, so you’re <b>${hrs(-room)} hours short</b>. The vault can carry it, or a shift or two.`,
     unknown: 'Log a paycheck and the hours show up here.',
   };
+  const src = `<button class="fine" data-act="hoursWeek" style="display:block;text-align:left;margin-top:6px">About ${money(v.income.lo)}${v.income.hi - v.income.lo > 50 ? '–' + money(v.income.hi).slice(1) : ''} coming in: ${hrs(v.perWeek)} hr a week${workWeek(s, m.day) ? ' (from Day)' : ''} × ${v.rate ? money(v.rate, true) + '/hr take-home' : 'your pay'}. <span class="link">change</span></button>`;
+  const miss = ctx.memo.miss || 0, missRoom = room - miss * avgShift(s, m.day);
+  const whatIf = `<div class="next" style="margin-top:12px"><small>What if I miss shifts this month?</small>` +
+    `<div class="opts">${[0, 1, 2, 3, 4].map(n => `<button class="opt${miss === n ? ' on' : ''}" data-act="whatIf" data-v="${n}">${n ? n + (n === 1 ? ' shift' : ' shifts') : 'none'}</button>`).join('')}</div>` +
+    (miss ? `<p style="margin-top:8px">${missRoom >= 0 ? `Still covered, with ${hrs(missRoom)} hours extra.` : `${hrs(-missRoom)} hours short (about ${money(-missRoom * (v.rate || 0))}). The vault can carry it.`}</p>` : '') + `</div>`;
   const wl = v.workLess, t = v.loan ? trade(s, v, avgShift(s, m.day)) : null;
   const damLine = v.dam.done ? 'Dam Day is done. Next month starts clean.' : v.dam.open ? `Dam Day · ${v.dam.days === 0 ? 'today' : 'you can split early'}` : `Dam Day · ${dayName(v.dam.date)} · ${v.dam.days} days`;
   return {
     sky: m.sky, html:
       `<div class="top"><span><b>Money</b></span><span>this month</span></div>` +
       `<div class="say" style="font-size:30px;margin-top:24px">${FEEL[f]}</div>` +
-      `<p class="fine" style="font-size:14px;margin-top:8px;color:rgba(255,255,255,.75)">${lines[f]}</p>` +
+      `<p class="fine" style="font-size:14px;margin-top:8px;color:rgba(255,255,255,.75)">${lines[f]}</p>` + (f !== 'unknown' ? src + whatIf : '') +
       (v.dam.open ? `<button class="done peachy" data-act="damOpen" style="margin-top:16px">The dam can open · start Dam Day</button>` : '') +
       (wl ? `<div class="next" style="margin-top:18px"><small>The day you can work less</small>
         <div style="display:flex;align-items:flex-end;gap:14px;margin-top:10px">
@@ -54,7 +59,7 @@ export function render(ctx) {
       (t ? `<button class="calm" data-act="trade" style="margin-top:12px"><i>⇄</i><span>Pick up a shift? ${esc(cap(M(s).loan.name || 'the loan'))} goes sooner, but study time shrinks. <span class="link">See the trade</span></span></button>` : '') +
       `<button class="calm" data-act="${v.dam.open ? 'damOpen' : 'damInfo'}"><i>◷</i>${esc(damLine)}</button>` +
       `<button class="calm" data-act="vault"><i>⛨</i>${v.vault && v.vault.months != null ? `Vault: you’re safe for ${about(v.vault.months)}` : 'Vault: type what’s in it to see your months of life'}</button>` +
-      `<button class="calm" data-act="fun"><i>☺</i>${v.personal ? `Fun money: about ${money(Math.max(0, v.personal.perDay))} a day` : 'Fun money: type what’s in Personal'}</button>` +
+      `<button class="calm" data-act="fun"><i>☺</i>${v.personal ? `Fun money: ${money(Math.max(0, v.personal.balance))}, about ${money(Math.max(0, v.personal.perDay))} a day` : 'Fun money: type what’s in Personal'}</button>` +
       `<div class="lbl">The parts</div>` +
       `<button class="calm" data-act="bills"><i>☰</i>Bills<span class="go">${money(M(s).bills.reduce((t, b) => t + b.amounts.reduce((a, x) => a + x, 0), 0) / 12)}/mo ›</span></button>` +
       `<button class="calm" data-act="pockets"><i>◫</i>Your pockets<span class="go">›</span></button>` +
@@ -138,53 +143,56 @@ function monthClose(ctx, v) {
 }
 
 /* ---------- Sheets ---------- */
-function billsSheet(ctx) {
-  const s = ctx.state, m = M(s), v = moneyView(s, ctx.m.day), rows = m.bills.map(b => {
-    const months = b.amounts.map((a, i) => (a > 0 ? i : -1)).filter(i => i >= 0), flat = months.length === 12 && b.amounts.every(a => a === b.amounts[0]);
-    const amt = flat ? b.amounts[0] : Math.max(...b.amounts), when = b.loan ? 'the loan payment' : flat ? 'monthly' : months.map(i => MON[i]).join(' · ');
-    return `<button class="pk" style="width:100%;text-align:left" data-act="bill" data-id="${esc(b.id)}"><span class="d"><b>${esc(b.name)}</b><br><span class="fine">${esc(when)}${b.bareMin ? ' · bare minimum' : ''}</span></span><b>${b.loan && m.loan ? money(+m.loan.payment || 0) : money(amt)}</b></button>`;
-  }).join('');
-  const perMonth = m.bills.length ? engine().billPlan(m.bills, m.loan, +m.jars.bills.cushion || 0).perMonth : 0;
-  openSheet(`<div class="lbl">Bills</div><div class="say">${m.bills.length ? 'Bills run in the background.' : 'No bills yet.'}</div>` +
-    (m.bills.length && v.rate ? `<p class="fine" style="margin-top:6px">About ${Math.round(perMonth / v.rate)} hours of work a month, big bills saved ahead.</p>` : '') +
-    rows + `<button class="pbtn" style="margin-top:14px" data-act="bill">+ add a bill</button>` +
-    `<p class="fine" style="margin-top:10px">Any rhythm: monthly, every six months, yearly. A change is kept as history, so past months stay true.</p>`);
+const nth = d => d + (d % 10 === 1 && d !== 11 ? 'st' : d % 10 === 2 && d !== 12 ? 'nd' : d % 10 === 3 && d !== 13 ? 'rd' : 'th');
+function rhythmWords(b) {
+  if (b.loan) return 'monthly';
+  const ms = b.amounts.map((a, i) => (a > 0 ? i : -1)).filter(i => i >= 0);
+  return ms.length === 12 ? 'monthly' : ms.length ? ms.map(i => MON[i]).join(' · ') : 'no months picked';
 }
-function billSheet(ctx, id) {
-  const m = M(ctx.state), b = m.bills.find(x => x.id === id) || { name: '', amounts: Array(12).fill(0) };
-  const months = b.amounts.map((a, i) => (a > 0 ? i : -1)).filter(i => i >= 0);
-  const rhythm = !months.length || months.length === 12 ? 'monthly' : months.length === 2 ? 'six' : 'yearly';
-  const amt = months.length ? b.amounts[months[0]] : '';
-  openSheet(`<div class="lbl">${id ? 'Change a bill' : 'Add a bill'}</div><input class="field serif" id="bname" value="${esc(b.name)}" placeholder="what it is" style="font-size:22px">` +
-    (b.loan ? `<p class="fine">This is the loan payment; its amount comes from the loan.</p>` :
-      `<div class="lbl">Amount</div><input class="field" id="bamt" inputmode="decimal" value="${esc(amt)}" placeholder="$0" style="font-size:22px;font-weight:800;text-align:center">` +
-      `<div class="lbl">How often</div><div class="opts" id="brh" style="margin-top:0">${[['monthly', 'monthly'], ['six', 'every 6 months'], ['yearly', 'yearly']].map(([k, l]) => `<button class="opt${rhythm === k ? ' on' : ''}" data-act="pick" data-v="${k}">${l}</button>`).join('')}</div>` +
-      `<div class="lbl">First month it’s due</div><select class="field" id="bstart">${MONTH.map((n, i) => `<option value="${i}"${(months[0] ?? +ctx.m.day.slice(5, 7) % 12) === i ? ' selected' : ''}>${n}</option>`).join('')}</select>`) +
-    `<label class="calm" style="margin-top:14px"><input type="checkbox" id="bbare"${b.bareMin ? ' checked' : ''} style="width:20px;height:20px"> Part of the bare minimum</label>` +
-    `<button class="pbtn" style="margin-top:16px" data-act="saveBill" data-id="${esc(id || '')}">Keep it</button>` +
-    (id && !b.loan ? `<p class="fine center" style="margin-top:12px"><button data-act="dropBill" data-id="${esc(id)}">remove this bill</button></p>` : ''));
+function billsSheet(ctx) {
+  const s = ctx.state, m = M(s), v = moneyView(s, ctx.m.day);
+  const plan = m.bills.length ? engine().billPlan(m.bills, m.loan, +m.jars.bills.cushion || 0) : null;
+  const next = +v.dam.splitMonth.slice(5) - 1, has = lastBalance(m, 'bills');
+  const rows = m.bills.slice().sort((a, b) => (a.day || 99) - (b.day || 99)).map(b => {
+    const amt = b.loan && m.loan ? +m.loan.payment || 0 : Math.max(...b.amounts);
+    const sub = (b.day ? 'comes out on the ' + nth(b.day) + ' · ' : '') + rhythmWords(b) + (b.loan && m.loan ? ' · ' + money(+m.loan.owed) + ' left to pay' : '') + (b.bareMin ? ' · bare minimum' : '');
+    return `<button class="pk" style="width:100%;text-align:left" data-act="bill" data-id="${esc(b.id)}"><span class="d"><b>${esc(b.name)}</b><br><span class="fine">${esc(sub)}</span></span><b>${money(amt)}</b></button>`;
+  }).join('');
+  openSheet(`<div class="lbl">Bills</div><div class="say">${m.bills.length ? 'Bills run in the background.' : 'No bills yet.'}</div>` +
+    (plan ? `<p class="fine" style="margin-top:6px">Bills should hold <b>${money(plan.target[next])}</b> after Dam Day, for ${MONTH[next]}${has ? `. It had <b>${money(has.value)}</b> on ${dayName(has.date)}` : ''}. Big bills are saved ahead a little each month.</p>` : '') +
+    rows + `<div class="opts" style="margin-top:14px"><button class="pbtn" data-act="bill">+ add a bill</button>${m.loan ? '' : '<button class="opt" data-act="bill" data-loan="1">+ a loan</button>'}</div>` +
+    `<p class="fine" style="margin-top:10px">Saving up for something, or an odd bill? Add it in the month you need it: Bills sets a little aside every month until then.</p>`);
+}
+function billSheet(ctx, id, asLoan) {
+  const m = M(ctx.state), b = m.bills.find(x => x.id === id) || { name: '', amounts: Array(12).fill(0), loan: !!asLoan };
+  const isLoan = !!b.loan, l = m.loan || {};
+  const on = isLoan ? Array(12).fill(true) : b.amounts.map(a => a > 0);
+  const amt = isLoan ? l.payment ?? '' : (Math.max(...b.amounts) || '');
+  const chips = MON.map((n, i) => `<button class="opt${on[i] ? ' on' : ''}" data-act="month" data-i="${i}" style="padding:8px 0;width:calc(25% - 6px);text-align:center">${n}</button>`).join('');
+  openSheet(`<div class="lbl">${id ? 'Change' : 'Add'} ${isLoan ? 'a loan' : 'a bill'}</div><input class="field serif" id="bname" value="${esc(isLoan ? l.name || b.name.replace(/ payment$/, '') : b.name)}" placeholder="${isLoan ? 'name it (the car, say)' : 'what it is'}" style="font-size:22px">` +
+    `<div class="grid2"><div><div class="lbl">${isLoan ? 'Payment a month' : 'Amount'}</div><input class="field" id="bamt" inputmode="decimal" value="${esc(amt)}" placeholder="$0" style="font-weight:800"></div>` +
+    `<div><div class="lbl">Day it comes out</div><input class="field" id="bday" inputmode="numeric" value="${esc(b.day || '')}" placeholder="1–31"></div></div>` +
+    (isLoan ? `<div class="grid2"><div><div class="lbl">Left to pay</div><input class="field" id="lowed" inputmode="decimal" value="${esc(l.owed ?? '')}" placeholder="$0"></div><div><div class="lbl">Rate (APR %)</div><input class="field" id="lapr" inputmode="decimal" value="${esc(l.apr != null ? +(l.apr * 100).toFixed(3) : '')}" placeholder="6.5"></div></div>`
+      : `<div class="lbl">Months it comes out</div><div class="opts" id="bmonths" style="margin-top:0;gap:6px">${chips}</div>` +
+        `<div class="opts" style="margin-top:8px">${[['all', 'every month'], ['2', 'every 2'], ['3', 'every 3'], ['6', 'every 6'], ['1', 'once a year'], ['none', 'clear']].map(([k, t]) => `<button class="opt" data-act="every" data-v="${k}" style="padding:6px 11px;font-size:12.5px">${t}</button>`).join('')}</div>`) +
+    `<label class="calm" style="margin-top:14px"><input type="checkbox" id="bbare"${b.bareMin || (isLoan && !id) ? ' checked' : ''} style="width:20px;height:20px"> Part of the bare minimum</label>` +
+    `<button class="pbtn" style="margin-top:16px" data-act="saveBill" data-id="${esc(id || '')}" data-loan="${isLoan ? 1 : ''}">Keep it</button>` +
+    (id ? `<p class="fine center" style="margin-top:12px"><button data-act="${isLoan ? 'dropLoan' : 'dropBill'}" data-id="${esc(id)}">${isLoan ? 'it’s paid off · remove it' : 'remove this bill'}</button></p>` : ''));
 }
 function pocketsSheet(ctx) {
   const m = M(ctx.state), J = m.jars;
   openSheet(`<div class="lbl">Your pockets</div><div class="say">Where money lives.</div><p class="fine" style="margin-top:6px">Same pockets as your bank, in the order Dam Day fills them.</p>` +
-    POCKETS.map(k => `<button class="pk" style="width:100%;text-align:left;align-items:center" data-act="pocket" data-k="${k}"><span style="width:12px;height:12px;border-radius:50%;background:${COLOR[k]}"></span><span class="d"><b>${esc(J[k].name)}</b>${J[k].bank ? ' · ' + esc(J[k].bank) : ''}<br><span class="fine">${esc(CAPTION[k](J[k]))}</span></span><span class="w">edit</span></button>`).join('') +
-    `<button class="pk" style="width:100%;text-align:left" data-act="loan"><span class="d"><b>${m.loan ? esc(m.loan.name || 'Loan') : 'A loan to beat?'}</b><br><span class="fine">${m.loan ? money(+m.loan.owed) + ' owed · ' + money(+m.loan.payment) + '/mo' : 'Add one, and the leftover can attack it.'}</span></span><span class="w">${m.loan ? 'edit' : 'add'}</span></button>` +
-    `<button class="next" data-act="extra" style="text-align:left;width:100%"><small>Whatever’s left</small><b style="font-size:16px">${m.extra.first === 'roth' ? 'The Roth first, then ' + esc(m.loan ? m.loan.name || 'the loan' : 'the loan') : esc(m.loan ? m.loan.name || 'The loan' : 'The loan') + ' first, then the Roth'}, then ${Math.round(m.extra.investShare * 100)}% invest · ${100 - Math.round(m.extra.investShare * 100)}% fun</b><p>Tap to change the order or the split.</p></button>`);
+    POCKETS.map(k => { const b = lastBalance(m, k);
+      return `<button class="pk" style="width:100%;text-align:left;align-items:center" data-act="pocket" data-k="${k}"><span style="width:12px;height:12px;border-radius:50%;background:${COLOR[k]}"></span><span class="d"><b>${esc(J[k].name)}</b>${J[k].bank ? ' · ' + esc(J[k].bank) : ''}<br><span class="fine">${esc(CAPTION[k](J[k]))}${b ? ' · had ' + money(b.value) + ' on ' + dayName(b.date) : ''}</span></span><span class="w">edit</span></button>`; }).join('') +
+    `<button class="next" data-act="extra" style="text-align:left;width:100%"><small>Whatever’s left</small><b style="font-size:16px">${m.extra.first === 'roth' ? 'The Roth first, then ' + esc(m.loan ? m.loan.name || 'the loan' : 'the loan') : esc(cap(m.loan ? m.loan.name || 'the loan' : 'the loan')) + ' first, then the Roth'}, then ${Math.round(m.extra.investShare * 100)}% invest · ${100 - Math.round(m.extra.investShare * 100)}% fun</b><p>Tap to change the order or the split.</p></button>`);
 }
 const FIELDS = { bills: [['cushion', 'Cushion (what it keeps at its lowest)']], gas: [['cap', 'Tops up to'], ['spend', 'Spends a month']], misc: [['cap', 'Tops up to'], ['spend', 'Spends a month']], personal: [['amount', 'Refill every month']], vault: [['cap', 'Full at (your safety net)']], income: [] };
 function pocketSheet(ctx, k) {
-  const j = M(ctx.state).jars[k];
+  const j = M(ctx.state).jars[k], b = lastBalance(M(ctx.state), k);
   openSheet(`<div class="lbl">Pocket</div><div class="grid2"><input class="field serif" id="pname" value="${esc(j.name)}" placeholder="name"><input class="field" id="pbank" value="${esc(j.bank || '')}" placeholder="bank’s label, like S01"></div>` +
+    `<div class="lbl">What it has now${b ? ' (it had ' + money(b.value) + ' on ' + dayName(b.date) + ')' : ''}</div><input class="field" inputmode="decimal" id="pbal" placeholder="type it from your bank app">` +
     FIELDS[k].map(([f, l]) => `<div class="lbl">${l}</div><input class="field" inputmode="decimal" data-f="${f}" value="${esc(j[f] ?? '')}" placeholder="$0">`).join('') +
     `<button class="pbtn" style="margin-top:16px" data-act="savePocket" data-k="${k}">Keep it</button>`);
-}
-function loanSheet(ctx) {
-  const l = M(ctx.state).loan || {};
-  openSheet(`<div class="lbl">The loan</div><input class="field serif" id="lname" value="${esc(l.name || '')}" placeholder="name it (the car, say)" style="font-size:20px">` +
-    `<div class="grid2"><div><div class="lbl">Owed now</div><input class="field" inputmode="decimal" id="lowed" value="${esc(l.owed ?? '')}" placeholder="$0"></div><div><div class="lbl">Payment a month</div><input class="field" inputmode="decimal" id="lpay" value="${esc(l.payment ?? '')}" placeholder="$0"></div></div>` +
-    `<div class="lbl">Rate (APR %)</div><input class="field" inputmode="decimal" id="lapr" value="${esc(l.apr != null ? +(l.apr * 100).toFixed(3) : '')}" placeholder="6.5">` +
-    `<p class="fine">Its payment comes out of Bills on its own.</p><button class="pbtn" style="margin-top:10px" data-act="saveLoan">Keep it</button>` +
-    (M(ctx.state).loan ? `<p class="fine center" style="margin-top:12px"><button data-act="dropLoan">it’s paid off · remove it</button></p>` : ''));
 }
 function extraSheet(ctx) {
   const x = M(ctx.state).extra;
@@ -206,15 +214,11 @@ function paycheckSheet(ctx) {
 }
 function funSheet(ctx) {
   const v = moneyView(ctx.state, ctx.m.day), p = v.personal, J = M(ctx.state).jars;
-  const strip = p ? Array.from({ length: Math.min(31, p.days) }, (_, i) => `<i style="flex:1;height:30px;border-radius:6px;background:${i < 1 ? '#ffd59a' : 'rgba(255,213,154,.22)'}"></i>`).join('') : '';
   openSheet(`<div class="lbl">${esc(J.personal.name)} · your fun money</div>` +
-    (p ? `<div class="say">About ${money(Math.max(0, p.perDay))} a day.</div><p class="fine" style="margin-top:6px">${money(Math.max(0, p.balance))} left until the dam opens on ${dayName(p.until)}.</p><div style="display:flex;gap:4px;margin-top:14px">${strip}</div>`
+    (p ? `<div class="say" style="font-size:40px">${money(Math.max(0, p.balance))}</div><p class="fine" style="margin-top:6px">About ${money(Math.max(0, p.perDay))} a day until the dam opens on ${dayName(p.until)}.</p>`
       : `<div class="say">What’s in ${esc(J.personal.name)} right now?</div>`) +
-    (v.iou > 0 ? `<div class="next" style="background:rgba(143,184,255,.08);border-color:rgba(143,184,255,.3)"><small style="color:#bcd2ff">Borrowed</small><b style="font-size:16px">${money(v.iou)} from another pocket</b><p>That’s okay. It comes out of next month’s refill, so the pocket is whole again.</p></div>` : '') +
-    `<div class="lbl">${p ? 'Type a fresh balance' : 'Type it from your bank app'}</div><div style="display:flex;gap:8px"><input class="field" inputmode="decimal" id="fbal" placeholder="$0"><button class="pbtn" data-act="saveFunBal">Keep</button></div>` +
-    `<div class="lbl">Log something you bought</div><div style="display:flex;gap:8px"><input class="field" inputmode="decimal" id="fspent" placeholder="$0" style="flex:1"><input class="field" id="fnote" placeholder="what (optional)" style="flex:2"></div><button class="pbtn" style="margin-top:8px" data-act="saveSpent">Log it</button>` +
-    `<div class="lbl">Borrowed from another pocket?</div><div style="display:flex;gap:8px"><input class="field" inputmode="decimal" id="bamtb" placeholder="$0" style="flex:1"><select class="field" id="bfrom" style="flex:1">${['gas', 'misc', 'vault'].map(k => `<option value="${k}">${esc(J[k].name)}</option>`).join('')}</select></div><button class="pbtn" style="margin-top:8px" data-act="saveBorrow">Note it</button>` +
-    `<p class="fine center" style="margin-top:14px">No judgment. The card in your wallet is the real limit; this just keeps you aware.</p>`);
+    (p ? `<div class="opts" style="margin-top:14px">${[-20, -10, -5, 5, 10, 20].map(n => `<button class="opt" data-act="nudgeFun" data-v="${n}">${n < 0 ? '−' : '+'}$${Math.abs(n)}</button>`).join('')}</div>` : '') +
+    `<div class="lbl">${p ? 'Or type the new balance' : 'Type it from your bank app'}</div><div style="display:flex;gap:8px"><input class="field" inputmode="decimal" id="fbal" placeholder="$0"><button class="pbtn" data-act="saveFunBal">Keep</button></div>`);
 }
 function vaultSheet(ctx) {
   const v = moneyView(ctx.state, ctx.m.day), x = v.vault, m = M(ctx.state);
@@ -240,10 +244,9 @@ const pick = el => el.parentElement.querySelectorAll('.opt').forEach(o => o.clas
 export const actions = {
   pick: (ctx, el) => pick(el),
   bills: ctx => billsSheet(ctx),
-  bill: (ctx, el) => billSheet(ctx, el.dataset.id),
+  bill: (ctx, el) => billSheet(ctx, el.dataset.id, el.dataset.loan),
   pockets: ctx => pocketsSheet(ctx),
   pocket: (ctx, el) => pocketSheet(ctx, el.dataset.k),
-  loan: ctx => loanSheet(ctx),
   extra: ctx => extraSheet(ctx),
   paycheck: ctx => paycheckSheet(ctx),
   fun: ctx => funSheet(ctx),
@@ -283,30 +286,56 @@ export const actions = {
     await ctx.write('money.import', data, 'Brought in from Valley', 'tick');
   },
   saveBill: async (ctx, el) => {
-    const m = M(ctx.state), id = el.dataset.id || 'bill' + Date.now().toString(36), old = m.bills.find(b => b.id === id), name = document.getElementById('bname').value.trim() || 'Bill';
-    let amounts = old ? old.amounts : Array(12).fill(0);
-    if (!old || !old.loan) {
-      const a = num('bamt'); if (!(a >= 0)) return toast('Type the amount.');
-      amounts = amountsFor(a, document.querySelector('#brh .opt.on')?.dataset.v || 'monthly', +document.getElementById('bstart').value);
-    }
+    const m = M(ctx.state), isLoan = !!el.dataset.loan, id = el.dataset.id || (isLoan ? 'loan' : 'bill' + Date.now().toString(36));
+    const name = document.getElementById('bname').value.trim() || (isLoan ? 'Loan' : 'Bill'), a = num('bamt');
+    const dayV = num('bday'), day = dayV >= 1 && dayV <= 31 ? Math.round(dayV) : null, bareMin = document.getElementById('bbare').checked;
+    if (!(a >= 0)) return toast('Type the amount.');
     const v0 = moneyView(ctx.state, ctx.m.day);
-    closeSheet(); await ctx.write('bill.set', { id, name, amounts, loan: old ? old.loan : false, bareMin: document.getElementById('bbare')?.checked || false });
+    if (isLoan) {
+      // A loan is a bill with a balance: its payment comes out of Bills; what's left to pay shrinks on Dam Day.
+      const owed = num('lowed'), apr = num('lapr');
+      if (!(owed >= 0) || !(apr >= 0) || apr > 40) return toast('Check the numbers. Type 6.5 for 6.5%.');
+      closeSheet();
+      await ctx.log.append('loan.set', { loan: { name, owed, payment: a, apr: apr / 100, asOf: ctx.m.day } }, 'money');
+      await ctx.write('bill.set', { id, name: name + ' payment', amounts: Array(12).fill(0), loan: true, bareMin, day });
+    } else {
+      const on = [...document.querySelectorAll('#bmonths .opt')].map(b => b.classList.contains('on'));
+      if (!on.some(Boolean)) return toast('Pick at least one month.');
+      closeSheet();
+      await ctx.write('bill.set', { id, name, amounts: on.map(x => (x ? a : 0)), loan: false, bareMin, day });
+    }
     const v1 = moneyView(ctx.state, ctx.m.day);
     if (v0.ready && v1.ready && v0.lifeHours != null) { const d = v1.lifeHours - v0.lifeHours; toast(Math.abs(d) < 0.5 ? 'Kept' : `About ${hrs(Math.abs(d))} ${d > 0 ? 'more' : 'fewer'} hours of work a month`); } else toast('Kept');
+  },
+  month: (ctx, el) => el.classList.toggle('on'),
+  every: (ctx, el) => {
+    const v = el.dataset.v, start = (+ctx.m.day.slice(5, 7)) % 12;   // next month
+    document.querySelectorAll('#bmonths .opt').forEach((b, i) => {
+      const k = (i - start + 12) % 12;
+      b.classList.toggle('on', v === 'all' ? true : v === 'none' ? false : k % +v === 0 && (v !== '1' || k === 0));
+    });
   },
   dropBill: async (ctx, el) => { closeSheet(); await ctx.write('bill.remove', { id: el.dataset.id }, 'Bill removed'); },
   savePocket: async (ctx, el) => {
     const set = { name: document.getElementById('pname').value.trim() || EMPTY.jars[el.dataset.k].name, bank: document.getElementById('pbank').value.trim() };
     for (const i of document.querySelectorAll('[data-f]')) { const v = String(i.value).replace(/[$,\s]/g, ''); set[i.dataset.f] = v === '' ? 0 : +v; if (isNaN(set[i.dataset.f])) return toast('Numbers only, please.'); }
-    closeSheet(); await ctx.write('pocket.set', { key: el.dataset.k, set }, 'Kept');
+    const bal = num('pbal');
+    closeSheet();
+    if (bal >= 0) await ctx.log.append('balance', { date: ctx.m.day, jar: el.dataset.k, value: bal }, 'money');
+    await ctx.write('pocket.set', { key: el.dataset.k, set }, 'Kept');
   },
-  saveLoan: async ctx => {
-    const owed = num('lowed'), pay = num('lpay'), apr = num('lapr');
-    if (!(owed >= 0) || !(pay >= 0) || !(apr >= 0) || apr > 40) return toast('Check the numbers. Type 6.5 for 6.5%.');
-    const name = document.getElementById('lname').value.trim() || 'Loan', m = M(ctx.state);
-    closeSheet(); await ctx.write('loan.set', { loan: { name, owed, payment: pay, apr: apr / 100, asOf: ctx.m.day } }, 'Kept');
-    if (!m.bills.some(b => b.loan)) await ctx.write('bill.set', { id: 'loan', name: name + ' payment', amounts: Array(12).fill(0), loan: true, bareMin: true });
+  nudgeFun: async (ctx, el) => {
+    const p = moneyView(ctx.state, ctx.m.day).personal; if (!p) return;
+    closeSheet(); await ctx.write('balance', { date: ctx.m.day, jar: 'personal', value: Math.max(0, Math.round((p.balance + +el.dataset.v) * 100) / 100) }, 'Fun money ' + money(Math.max(0, p.balance + +el.dataset.v)));
   },
+  whatIf: (ctx, el) => { ctx.memo.miss = +el.dataset.v; ctx.render(); },   // a what-if: shown, never saved
+  hoursWeek: ctx => {
+    const m = M(ctx.state), fromDay = workWeek(ctx.state, ctx.m.day);
+    openSheet(`<div class="lbl">Hours a week</div><div class="say">${fromDay ? hrs(fromDay) + ' hours, from Day.' : 'Your usual week.'}</div>` +
+      `<p class="fine" style="margin-top:6px">${fromDay ? 'Your shifts planned in Day set this. Change them there.' : 'Until you plan your shifts in Day, Money uses this.'} Pay per hour is take-home ÷ hours from your last three checks.</p>` +
+      (fromDay ? '' : `<input class="field" id="hweek" inputmode="decimal" value="${esc(m.income.hoursPerWeek || '')}" style="font-size:22px;font-weight:800;text-align:center;margin-top:12px"><div class="opts">${[20, 30, 32, 40].map(n => `<button class="opt" data-act="setWeek" data-v="${n}">${n}</button>`).join('')}</div><button class="pbtn" style="margin-top:12px" data-act="setWeek">Keep it</button>`));
+  },
+  setWeek: async (ctx, el) => { const v = el.dataset.v ? +el.dataset.v : num('hweek'); if (!(v > 0)) return toast('Type the hours.'); closeSheet(); await ctx.write('income.set', { hoursPerWeek: v }, v + ' hours a week'); },
   dropLoan: async ctx => {
     closeSheet();
     const m = M(ctx.state), l = m.loan, v = moneyView(ctx.state, ctx.m.day), pay = l ? +l.payment || 0 : 0;
@@ -330,7 +359,5 @@ export const actions = {
     closeSheet(); await ctx.write('paycheck', { date, net, hours }, 'Paycheck kept', 'tick');
   },
   saveFunBal: async ctx => { const v = num('fbal'); if (!(v >= 0)) return; closeSheet(); await ctx.write('balance', { date: ctx.m.day, jar: 'personal', value: v }, 'Kept'); },
-  saveSpent: async ctx => { const v = num('fspent'); if (!(v > 0)) return; const note = document.getElementById('fnote').value.trim(); closeSheet(); await ctx.write('spent', { date: ctx.m.day, amount: v, note }, 'Logged'); },
-  saveBorrow: async ctx => { const v = num('bamtb'); if (!(v > 0)) return; closeSheet(); await ctx.write('borrow', { date: ctx.m.day, from: document.getElementById('bfrom').value, amount: v }, 'Noted. Dam Day pays it back.'); },
   saveVault: async ctx => { const v = num('vbal'); if (!(v >= 0)) return; closeSheet(); await ctx.write('balance', { date: ctx.m.day, jar: 'vault', value: v }, 'Kept'); },
 };

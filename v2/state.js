@@ -43,7 +43,7 @@ export const APP = {
     'money.import': (s, d, e) => ({ ...s, money: { ...EMPTY_MONEY, ...M(s), ...d, imported: e.at } }),
     'pocket.set': (s, d) => { const m = M(s); return { ...s, money: { ...m, jars: { ...m.jars, [d.key]: { ...m.jars[d.key], ...d.set } } } }; },
     'bill.set': (s, d) => { const m = M(s), bills = m.bills.filter(b => b.id !== d.id); const i = m.bills.findIndex(b => b.id === d.id);
-      bills.splice(i < 0 ? bills.length : i, 0, { id: d.id, name: d.name, amounts: d.amounts, loan: !!d.loan, bareMin: !!d.bareMin }); return { ...s, money: { ...m, bills } }; },
+      bills.splice(i < 0 ? bills.length : i, 0, { id: d.id, name: d.name, amounts: d.amounts, loan: !!d.loan, bareMin: !!d.bareMin, day: d.day || null }); return { ...s, money: { ...m, bills } }; },
     'bill.remove': (s, d) => { const m = M(s); return { ...s, money: { ...m, bills: m.bills.filter(b => b.id !== d.id) } }; },
     'loan.set': (s, d) => ({ ...s, money: { ...M(s), loan: d.loan } }),
     'extra.set': (s, d) => { const m = M(s); return { ...s, money: { ...m, extra: { ...m.extra, ...d } } }; },

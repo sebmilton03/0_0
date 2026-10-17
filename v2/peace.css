@@ -37,6 +37,9 @@ a { color: inherit; text-decoration: none; }
 .tide { background: linear-gradient(180deg, #0e1430 0%, #1a2748 55%, #2a3c5e 100%); }
 .soft { background: linear-gradient(180deg, #151626 0%, #1d1b30 100%); }
 .winddown { background: #0d0906; }
+/* A soft shade over the lower sky, so white text stays readable over bright dawn and golden bottoms. */
+.sky::after { content: ''; position: absolute; inset: 0; background: linear-gradient(180deg, transparent 35%, rgba(10, 12, 30, .42) 100%); pointer-events: none; }
+.winddown::after { display: none; }
 .stars { position: fixed; left: 0; top: 0; width: 100%; height: 100%; pointer-events: none; z-index: -1; }
 
 /* The screen */
@@ -164,6 +167,7 @@ a { color: inherit; text-decoration: none; }
   padding: 16px 22px calc(30px + env(safe-area-inset-bottom)); border-radius: 30px 30px 0 0; background: #141b38; border-top: 1px solid rgba(255, 255, 255, .12);
   transform: translateY(100%); transition: transform .32s cubic-bezier(.2, .8, .2, 1); }
 .sheet.on { transform: none; }
+.sheetx { position: absolute; right: 18px; top: 12px; padding: 6px 12px; border-radius: 12px; background: rgba(255, 255, 255, .08); font-size: 13px; font-weight: 700; color: var(--soft-lilac); }
 .grab { width: 44px; height: 5px; border-radius: 3px; background: rgba(255, 255, 255, .2); margin: 0 auto 14px; }
 .sheet .say { margin-top: 4px; font-size: 26px; }
 .sheet .lbl:first-of-type { margin-top: 0; }
