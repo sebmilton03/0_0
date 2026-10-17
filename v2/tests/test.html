@@ -28,6 +28,9 @@ import { openLog, dropLog, canonical, stamp, HIDDEN, CORRECTION } from '../core/
 import { replay, effective, createStore, makeCheckpoint, verifyCheckpoint } from '../core/store.js';
 import { exportLog, importLog, check, backupName, persist } from '../core/backup.js';
 import * as D from '../engines/sebdate.js';
+import { sunTimes, sky } from '../engines/sky.js';
+import { where } from '../engines/pillars.js';
+import { APP as HOME } from '../state.js';
 
 const results = [];
 let group = '';
@@ -260,6 +263,45 @@ async function run() {
       ['2026-11-01', '2026-11-01', '2027-03-14', '2027-03-14']);
     eq('a log time on each change day keeps its local date and hour', [stamp(new Date(2026, 10, 1, 1, 30)).slice(0, 16), stamp(new Date(2027, 2, 14, 3, 30)).slice(0, 16)],
       ['2026-11-01T01:30', '2027-03-14T03:30']);
+  }
+
+  // ---------------------------------------------------------------- sky
+  group = 'The sky follows the real sun';
+  {
+    // A sample city (Portland, Oregon); published sunrise and sunset, in UTC so this works in any time zone.
+    const P = { lat: 45.52, lon: -122.68 }, mins = ms => Math.round(ms / 60000), near = (a, b) => Math.abs(mins(a) - mins(b)) <= 4;
+    const jun = sunTimes('2026-06-21', P.lat, P.lon), dec = sunTimes('2026-12-21', P.lat, P.lon);
+    yes('Jun 21: sunrise about 5:21 AM PDT (12:21 UTC)', near(jun.rise, Date.UTC(2026, 5, 21, 12, 21)), new Date(jun.rise).toISOString());
+    yes('Jun 21: sunset about 9:03 PM PDT (04:03 UTC next day)', near(jun.set, Date.UTC(2026, 5, 22, 4, 3)), new Date(jun.set).toISOString());
+    yes('Dec 21: sunrise about 7:51 AM PST (15:51 UTC)', near(dec.rise, Date.UTC(2026, 11, 21, 15, 51)), new Date(dec.rise).toISOString());
+    yes('Dec 21: sunset about 4:30 PM PST (00:30 UTC next day)', near(dec.set, Date.UTC(2026, 11, 22, 0, 30)), new Date(dec.set).toISOString());
+    eq('noon in June is day', sky(new Date(jun.noon), P).phase, 'day');
+    eq('two hours after sunset is night, with stars', [sky(new Date(jun.set + 2 * 36e5), P).phase, sky(new Date(jun.set + 2 * 36e5), P).stars], ['night', true]);
+    eq('after wind-down the sky turns warm and dim', sky(new Date(), P, true).phase, 'winddown');
+    eq('with no place set, midnight is still night', sky(new Date(2026, 9, 16, 0, 30)).phase, 'night');
+  }
+
+  // ---------------------------------------------------------------- pillars
+  group = 'Home: where I am, and the next thing';
+  {
+    const base = { ...HOME.init, places: ['home', 'money', 'food', 'school', 'sleep'] };
+    const study = { target: 12, days: { '2026-10-12': 120, '2026-10-13': 120, '2026-10-14': 60 } };   // 5 hours by Wednesday
+    const valley = { split: '2026-10-31', kind: 'ok', note: '' };
+    const w0 = where(base, { valleyLine: valley, studyState: study }, '2026-10-14', 8);
+    eq('a fresh week: reset and prep need you, sleep asks first', w0.next.key, 'sleep');
+    eq('…and the words say so', w0.pillars.map(p => p.word), ['reset day', 'steady', 'prep day', 'on path', 'not yet']);
+    const s1 = replay([], HOME.reducers, base);
+    const done = { ...s1, sleep: { '2026-10-14': 'okay' }, ticks: { home: ['2026-10-12'], food: ['2026-10-13'] } };
+    const w1 = where(done, { valleyLine: valley, studyState: study }, '2026-10-14', 8);
+    eq('after the taps, nothing needs you: chillin', [w1.chillin, w1.next], [true, null]);
+    eq('sleep shows the word you tapped', w1.pillars.find(p => p.key === 'sleep').word, 'okay');
+    eq('last week’s reset doesn’t count for this week', where({ ...done, ticks: { home: ['2026-10-11'], food: ['2026-10-13'] } }, { valleyLine: valley, studyState: study }, '2026-10-14', 8).next.key, 'home');
+    eq('Valley saying "heads up" makes money the next thing', where(done, { valleyLine: { ...valley, kind: 'check', note: 'Nov looks $280 short' }, studyState: study }, '2026-10-14', 8).next.key, 'money');
+    eq('Dam Day itself is the next thing', where(done, { valleyLine: valley, studyState: study }, '2026-10-31', 8).next.detail, 'Dam Day: time to split.');
+    eq('an unanswered sleep stops asking after 2 PM', where({ ...done, sleep: {} }, { valleyLine: valley, studyState: study }, '2026-10-14', 15).next, null);
+    eq('study behind pace says "catching up" but never nags', (() => { const w = where({ ...done, sleep: { '2026-10-16': 'rested' } }, { valleyLine: valley, studyState: { target: 12, days: {} } }, '2026-10-16', 9); return [w.pillars.find(p => p.key === 'school').word, w.chillin]; })(), ['catching up', true]);
+    eq('your own words replace the defaults', where({ ...done, settings: { words: { home: { good: 'cozy' } } } }, null, '2026-10-14', 8).pillars[0].word, 'cozy');
+    eq('starts blank: no places, nothing on screen', where(HOME.init, null, '2026-10-14', 8).pillars, []);
   }
 }
 
